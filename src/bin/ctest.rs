@@ -1,10 +1,15 @@
+//use crate::{lex,corp,text,bits,rev,structure};
+
+use corpconftest::corp;
+//use corp;
+/*
 mod lex;
 mod corp;
 mod text;
 mod bits;
 mod rev;
 mod structure;
-
+*/
 
 fn main() {
     let corpname = std::env::args().nth(1).expect("specify corpname");
