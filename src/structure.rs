@@ -1,7 +1,7 @@
 use std::io::*;
 use fs_err::File;
 use std::str;
-use std::cmp::Ordering;
+//use std::cmp::Ordering;
 
 use memmap::MmapOptions;
 

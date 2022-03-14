@@ -27,18 +27,19 @@ fn main() {
 
     for i in 100..200 {
         let id = it.next().unwrap();
-        //println!("{:?}: {} {}",i, id, attr.lex.id2str(id as u32) )
+        println!("{:?}: {} {}",i, id, attr.lex.id2str(id as u32) )
     }
 
-    println!("{:?}", &attr.rev);
+    //println!("{:?}", &attr.rev);
 
-    let id = attr.lex.str2id("county");
+    let id = attr.lex.str2id("test");
     println!("{}", id);
     println!("");
 
     let mut revit = attr.rev.id2poss(id as u32);
     for p in revit {
-        println!("{}", p);
+        let itt = attr.text.at(p).next().unwrap();
+        println!("{} {}", p, itt);
     }
 
 

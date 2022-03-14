@@ -27,6 +27,10 @@ pub struct GigaDelta {
     positions: usize,
 }
 
+pub trait Text: std::fmt::Debug {
+    fn at(&self, pos: u64) -> DeltaIter;
+}
+
 impl GigaDelta {
     pub fn open(base: &str) -> Result<GigaDelta, std::io::Error> {
         let text = File::open(base.to_string() + ".text")?;
@@ -60,6 +64,10 @@ impl GigaDelta {
     }
 }
 
+impl Text for Delta {
+    fn at(&self, pos: u64) -> DeltaIter { self.at(pos) }
+}
+
 pub fn as_slice_ref<'a, T>(mmap: &'a memmap::Mmap) -> &'a [T] {
     unsafe{ std::slice::from_raw_parts(
         mmap.as_ptr() as *const T,
@@ -74,11 +82,11 @@ pub struct DeltaIter<'a> {
 }
 
 impl Iterator for DeltaIter<'_> {
-    type Item = i32;
-    fn next(&mut self) -> Option<i32> {
+    type Item = u64;
+    fn next(&mut self) -> Option<u64> {
         if self.remaining > 0 {
             self.remaining -= 1;
-            Some(self.rb.delta() as i32 - 1)
+            Some(self.rb.delta() as u64 - 1)
         } else { None }
     }
 }
@@ -112,4 +120,6 @@ impl Delta {
     }
 }
 
-
+impl Text for GigaDelta {
+    fn at(&self, pos: u64) -> DeltaIter { self.at(pos) }
+}
