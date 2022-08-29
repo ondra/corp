@@ -1,5 +1,5 @@
 [package]
-name = "corpconftest"
+name = "corp"
 version = "0.1.0"
 edition = "2018"
 

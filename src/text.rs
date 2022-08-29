@@ -3,10 +3,11 @@ use fs_err::File;
 use memmap::MmapOptions;
 
 use crate::bits;
+use crate::util::as_slice_ref;
 
 #[derive(Debug)]
 pub struct Delta {
-    name: String,
+    pub name: String,
     text: memmap::Mmap,
     seg: memmap::Mmap,
     positions: usize,
@@ -20,7 +21,7 @@ pub struct BigDelta {
 
 #[derive(Debug)]
 pub struct GigaDelta {
-    name: String,
+    pub name: String,
     text: memmap::Mmap,
     offset: memmap::Mmap,
     segment: memmap::Mmap,
@@ -68,13 +69,6 @@ impl Text for Delta {
     fn at(&self, pos: u64) -> DeltaIter { self.at(pos) }
 }
 
-pub fn as_slice_ref<'a, T>(mmap: &'a memmap::Mmap) -> &'a [T] {
-    unsafe{ std::slice::from_raw_parts(
-        mmap.as_ptr() as *const T,
-        (mmap.len() + (std::mem::size_of::<T>()-1)) / std::mem::size_of::<T>())
-    }
-}
-
 #[derive(Debug)]
 pub struct DeltaIter<'a> {
     pub remaining: u64,
@@ -82,11 +76,11 @@ pub struct DeltaIter<'a> {
 }
 
 impl Iterator for DeltaIter<'_> {
-    type Item = u64;
-    fn next(&mut self) -> Option<u64> {
+    type Item = u32;
+    fn next(&mut self) -> Option<u32> {
         if self.remaining > 0 {
             self.remaining -= 1;
-            Some(self.rb.delta() as u64 - 1)
+            Some(self.rb.delta() as u32 - 1)
         } else { None }
     }
 }

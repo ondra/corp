@@ -2,9 +2,9 @@ use memmap::MmapOptions;
 use fs_err::File;
 use std::fmt;
 
-use crate::text::as_slice_ref;
 use crate::text::DeltaIter;
 use crate::bits;
+use crate::util::as_slice_ref;
 
 #[derive(Debug)]
 struct BadRevHeader {
@@ -37,9 +37,8 @@ impl std::error::Error for BadRevHeader {}
 
 pub fn open(base: &str) -> Result<Box<dyn Rev>, Box<dyn std::error::Error>> {
     let revf = File::open(base.to_string() + ".rev")?;
-    let mut rev = unsafe { MmapOptions::new().map(revf.file())? };
+    let rev = unsafe { MmapOptions::new().map(revf.file())? };
 
-    println!("{:?}", &rev[0..=6]);
     match &rev[0..6] {
         b"\xa3finDR" => Ok(Box::new(Delta::open(base)?)),
         b"\xa8finDR" => Ok(Box::new(DeltaDense::open(base)?)),
@@ -124,7 +123,7 @@ impl DeltaDense {
         let crdxf0 = File::open(base.to_string() + ".rev.idx0")?;
         let crdxf1 = File::open(base.to_string() + ".rev.idx1")?;
 
-        let mut rev = unsafe {DeltaDense {
+        let rev = unsafe {DeltaDense {
             crevf: MmapOptions::new().map(crevf.file())?,
             crdxf0: MmapOptions::new().map(crdxf0.file())?,
             crdxf1: MmapOptions::new().map(crdxf1.file())?,
@@ -144,7 +143,7 @@ impl DeltaDense {
         let mut seek = 0 as usize;
         let mut cnt = 0 as u64;
 
-        for i in 0 ..= rem {
+        for _blkpos in 0 ..= rem {
             seek += rb.delta() as usize;
             cnt = rb.gamma() - 1;
         }

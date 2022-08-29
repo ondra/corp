@@ -4,6 +4,7 @@ use std::str;
 //use std::cmp::Ordering;
 
 use memmap::MmapOptions;
+use crate::util::as_slice_ref;
 
 #[inline]
 pub fn read<T: Sized>(mmap: &memmap::Mmap, idx: usize) -> T {
@@ -13,14 +14,36 @@ pub fn read<T: Sized>(mmap: &memmap::Mmap, idx: usize) -> T {
 
 #[derive(Debug)]
 pub struct MapStructure32 {
-    name: String,
+    pub name: String,
     rng: memmap::Mmap,
 }
 
 #[derive(Debug)]
 pub struct MapStructure64 {
-    name: String,
+    pub name: String,
     rng: memmap::Mmap,
+}
+
+impl MapStructure64 {
+    pub fn open(base: &str) -> Result<MapStructure64> {
+        let open_map = |name| {
+            let f = File::open(base.to_string() + name)?;
+            unsafe { MmapOptions::new().map(f.file()) }
+        };
+
+        Ok(MapStructure64{
+            name: base.to_string(),
+            rng: open_map(".rng")?,
+        })
+    }
+    
+    pub fn beg_at(&self, pos: u64) -> u64 {
+        read(&self.rng, (pos * 2) as usize)
+    }
+    
+    pub fn end_at(&self, pos: u64) -> u64 {
+        as_slice_ref::<u32>(&self.rng)[(pos * 2 + 1) as usize] as u64
+    }
 }
 
 impl MapStructure32 {
@@ -29,18 +52,39 @@ impl MapStructure32 {
             let f = File::open(base.to_string() + name)?;
             unsafe { MmapOptions::new().map(f.file()) }
         };
-
         Ok(MapStructure32{
             name: base.to_string(),
             rng: open_map(".rng")?,
         })
     }
-    
-    pub fn beg_at(&self, pos: u32) -> u64 {
-        read(&self.rng, (pos * 2) as usize)
+    pub fn beg_at(&self, pos: u64) -> u64 {
+        read::<u32>(&self.rng, (pos * 2) as usize) as u64
     }
-    
-    pub fn end_at(&self, pos: u32) -> u64 {
-        read(&self.rng, (pos * 2 + 1) as usize)
+    pub fn end_at(&self, pos: u64) -> u64 {
+        read::<u32>(&self.rng, (pos * 2 + 1) as usize) as u64
     }
+}
+
+pub fn open(base: &str, type64: bool) -> std::result::Result<Box<dyn Struct>,
+    Box<dyn std::error::Error>> {
+    Ok(if type64 { Box::new(MapStructure64::open(base)?) }
+    else { Box::new(MapStructure32::open(base)?) })
+}
+
+pub trait Struct {
+    fn beg_at(&self, pos: u64) -> u64;
+    fn end_at(&self, pos: u64) -> u64;
+    fn len(&self) -> usize;
+}
+
+impl Struct for MapStructure32 {
+    fn beg_at(&self, pos: u64) -> u64 { self.beg_at(pos) }
+    fn end_at(&self, pos: u64) -> u64 { self.end_at(pos) }
+    fn len(&self) -> usize { self.rng.len() / 8 }
+}
+
+impl Struct for MapStructure64 {
+    fn beg_at(&self, pos: u64) -> u64 { self.beg_at(pos) }
+    fn end_at(&self, pos: u64) -> u64 { self.end_at(pos) }
+    fn len(&self) -> usize { self.rng.len() / 16 }
 }

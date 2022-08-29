@@ -13,7 +13,7 @@ pub fn read<T: Sized>(mmap: &memmap::Mmap, idx: usize) -> T {
 
 #[derive(Debug)]
 pub struct MapLex {
-    name: String,
+    pub name: String,
     lex: memmap::Mmap,
     srt: memmap::Mmap,
     idx: memmap::Mmap,
@@ -46,9 +46,9 @@ impl MapLex {
         }
     }
 
-    pub fn str2id(&self, s: &str) -> i32 {
-        let mut bot = 0 as i32;
-        let mut top = (self.srt.len() / 4)  as i32 - 1;
+    pub fn str2id(&self, s: &str) -> Option<u32> {
+        let mut bot = 0 as u32;
+        let mut top = (self.srt.len() / 4) as u32 - 1;
         while bot <= top {
             let cur_id = (top + bot) / 2;
             let sort_id: u32 = read(&self.srt, cur_id as usize);
@@ -56,9 +56,13 @@ impl MapLex {
             match q.cmp(s) {
                 Ordering::Less => bot = cur_id + 1,
                 Ordering::Greater => top = cur_id - 1,
-                Ordering::Equal => return sort_id as i32,
+                Ordering::Equal => return Some(sort_id),
             }
         }
-        -1
+        None
+    }
+
+    pub fn id_range(&self) -> u32 {
+        (self.srt.len() / 4) as u32
     }
 }
