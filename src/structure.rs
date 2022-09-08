@@ -42,7 +42,7 @@ impl MapStructure64 {
     }
     
     pub fn end_at(&self, pos: u64) -> u64 {
-        as_slice_ref::<u32>(&self.rng)[(pos * 2 + 1) as usize] as u64
+        as_slice_ref::<u64>(&self.rng)[(pos * 2 + 1) as usize] as u64
     }
 }
 
@@ -65,7 +65,7 @@ impl MapStructure32 {
     }
 }
 
-pub fn open(base: &str, type64: bool) -> std::result::Result<Box<dyn Struct>,
+pub fn open(base: &str, type64: bool) -> std::result::Result<Box<dyn Struct + Sync + Send>,
     Box<dyn std::error::Error>> {
     Ok(if type64 { Box::new(MapStructure64::open(base)?) }
     else { Box::new(MapStructure32::open(base)?) })

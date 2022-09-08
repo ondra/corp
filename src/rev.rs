@@ -35,7 +35,7 @@ impl fmt::Display for BadRevHeader {
 
 impl std::error::Error for BadRevHeader {}
 
-pub fn open(base: &str) -> Result<Box<dyn Rev>, Box<dyn std::error::Error>> {
+pub fn open(base: &str) -> Result<Box<dyn Rev + Sync + Send>, Box<dyn std::error::Error>> {
     let revf = File::open(base.to_string() + ".rev")?;
     let rev = unsafe { MmapOptions::new().map(revf.file())? };
 

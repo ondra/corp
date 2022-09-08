@@ -15,8 +15,8 @@ pub struct StdAttr {
     pub name: String,
     pub conf: corpconf::Block,
     pub lex: lex::MapLex,
-    pub text: Box<dyn text::Text>,
-    pub rev: Box<dyn rev::Rev>,
+    pub text: Box<dyn text::Text + Sync + Send>,
+    pub rev: Box<dyn rev::Rev + Sync + Send>,
 }
 
 #[derive(Debug)]
@@ -26,15 +26,15 @@ pub struct DynAttr {
     pub name: String,
     pub conf: corpconf::Block,
     pub lex: lex::MapLex,
-    pub fromattr: Box<dyn Attr>,
+    pub fromattr: Box<dyn Attr + Sync + Send>,
     ridx: memmap::Mmap,
 
     // frqm: memmap::Mmap,
-    lrev: Box<dyn rev::Rev>,
+    lrev: Box<dyn rev::Rev + Sync + Send>,
 }
 
 // pub trait Attr<'a> : std::fmt::Debug + Frequency {
-pub trait Attr: std::fmt::Debug + Frequency {
+pub trait Attr: std::fmt::Debug + Frequency + Sync + Send {
     fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_>;
     fn id2str(&self, id: u32) -> &str;
     fn str2id(&self, s: &str) -> Option<u32>;
@@ -135,18 +135,16 @@ impl Corpus {
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
         let conf = corpconf::parse_conf_opt(&buf)?;
-        Ok(Corpus{
-            path: rebase_path(conf_filename, conf.value("PATH").ok_or(AttrNotFound{})?)?.to_string(),
-            name: conf_filename.to_string(),
-            conf
-        })
+        let path = rebase_path(conf_filename, conf.value("PATH").ok_or(AttrNotFound{})?)?;
+        let path = path.trim_end_matches('/').to_string() + "/";
+        Ok(Corpus{ path, name: conf_filename.to_string(), conf })
     }
 
     pub fn rebase_path(&self, path: &str) -> Result<String, Box<dyn std::error::Error>> {
         Ok(rebase_path(&self.name, path)?.to_string())
     }
 
-    pub fn open_attribute<'a, 'b>(&'a self, name: &str) -> Result<Box<dyn Attr + 'b>, Box<dyn std::error::Error>> 
+    pub fn open_attribute<'a, 'b>(&'a self, name: &str) -> Result<Box<dyn Attr + Sync + Send + 'b>, Box<dyn std::error::Error>> 
     {
         let attr = self.conf.attribute(name).ok_or(AttrNotFound{})?;
         let path = self.path.clone() + "/" + name;
@@ -183,7 +181,7 @@ impl Corpus {
     }
 
     fn open_text<'a>(&self, path: &str, typecode: &str)
-        -> Result<Box<dyn text::Text + 'a>, Box<dyn std::error::Error>>
+        -> Result<Box<dyn text::Text + Sync + Send + 'a>, Box<dyn std::error::Error>>
     {
         match typecode {
             "MD_MD" | "FD_FD" | "FD_MD"
@@ -194,13 +192,44 @@ impl Corpus {
         }
     }
 
-    pub fn open_struct<'a>(&self, name: &str, type64: bool)
-        -> Result<Box<dyn structure::Struct + 'a>, Box<dyn std::error::Error>>
+    pub fn open_struct<'a>(&self, name: &str)
+        -> Result<Box<dyn structure::Struct + Sync + Send + 'a>, Box<dyn std::error::Error>>
     {
+        let s = self.conf.structure(&name).ok_or(AttrNotFound{})?;
+        let type64 = match s.value("TYPE") {
+            Some("file64") => true,
+            Some("map64") => true,
+            _ => false,
+        };
+
         structure::open(
             &(self.path.clone() + "/" + name),
             type64
         )
+    }
+
+    pub fn get_conf(&self, name: &str) -> Option<String> {
+        if let Some(val) = self.conf.value(name) {
+            return Some(val.to_string());
+        }
+        match name {
+            "WSATTR" => {
+                ["lempos_lc","lempos","lemma_lc","lemma"]
+                .iter().find(
+                    |a| self.conf.attribute(a).is_some()
+                ).map(|x|x.to_string())
+                .or_else(|| self.get_conf("DEFAULTATTR"))
+            },
+            "DEFAULTATTR" => Some("word".to_string()),
+            "WSBASE" => Some(self.path.to_string()
+                             + &self.get_conf("WSATTR").unwrap() + "-ws"),
+            _ => None,
+        }.map(|val| {
+            match name {
+                "WSBASE" => self.rebase_path(&val).unwrap(),
+                _ => val,
+            }
+        })
     }
 }
 
