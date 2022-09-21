@@ -3,6 +3,9 @@
 use crate::bits;
 use crate::util::as_slice_ref;
 
+use crate::lex::MapLex;
+use crate::corp::Attr;
+
 use std::fmt;
 
 #[derive(Debug)]
@@ -318,8 +321,8 @@ pub struct WMapRevStream<'a> {
 }
 
 impl Iterator for WMapRevStream<'_> {
-    type Item = (u64, Option<i32>);
-    fn next(&mut self) -> Option<(u64, Option<i32>)> {
+    type Item = (usize, Option<i32>);
+    fn next(&mut self) -> Option<(usize, Option<i32>)> {
         if self.remaining == 0 { return None; }
         self.remaining -= 1;
 
@@ -334,6 +337,54 @@ impl Iterator for WMapRevStream<'_> {
             assert!(self.rb.gamma() == 1);
             Some((c / 2) as i32)
         };
-        Some((self.curpos as u64, coll))
+        Some((self.curpos as usize, coll))
     }
+}
+
+impl ExactSizeIterator for WMapRevStream<'_> {
+    fn len(&self) -> usize { self.remaining }
+}
+
+pub struct WSLex<'a> {
+    grlex: MapLex,
+    colllex: Option<MapLex>,
+    wsattr: &'a dyn Attr,
+}
+
+impl WSLex<'_> {
+    pub fn open<'a, 'b>(wsbase: &'a str, wsattr: &'b dyn Attr)
+            -> Result<WSLex<'b>, Box<dyn std::error::Error>> {
+        let grlex = MapLex::open(&wsbase)?;
+        let ml = MapLex::open(&(wsbase.to_string() + ".coll"));
+        let colllex = match ml {  // distinguish between error and nonexistence
+            Ok(a) => Some(a),
+            Err(e@std::io::Error {..}) => {
+                if e.kind() == std::io::ErrorKind::InvalidInput { None }
+                else { return Err(Box::new(e)); }
+            },
+        };
+        Ok(WSLex { grlex, colllex, wsattr })
+    }
+
+    pub fn coll2id(&self, coll: &str) -> u32 {
+        if let Some(id) = self.wsattr.str2id(coll) {
+            id
+        } else {
+            self.colllex.as_ref().unwrap().str2id(coll).unwrap() - self.wsattr.id_range()
+        }
+    }
+
+    pub fn id2coll(&self, id: u32) -> &str {
+        if id > self.wsattr.id_range() {
+            self.colllex.as_ref().unwrap().id2str(id - self.wsattr.id_range())
+        } else {
+            self.wsattr.id2str(id)
+        }
+    }
+
+    pub fn id2head(&self, id: u32) -> &str { self.wsattr.id2str(id) }
+    pub fn head2id(&self, head: &str) -> Option<u32> { self.wsattr.str2id(head) }
+
+    pub fn id2rel(&self, id: u32) -> &str { self.grlex.id2str(id) }
+    pub fn rel2id(&self, head: &str) -> Option<u32> { self.grlex.str2id(head) }
 }
