@@ -140,8 +140,8 @@ impl DeltaDense {
         let rem = id % 64;
 
         let mut rb = bits::Reader::open(as_slice_ref(&self.crdxf1), block_seek*8);
-        let mut seek = 0 as usize;
-        let mut cnt = 0 as u64;
+        let mut seek = 0;
+        let mut cnt = 0;
 
         for _blkpos in 0 ..= rem {
             seek += rb.delta() as usize;

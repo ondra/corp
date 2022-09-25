@@ -9,7 +9,7 @@ use crate::util::as_slice_ref;
 #[inline]
 pub fn read<T: Sized>(mmap: &memmap::Mmap, idx: usize) -> T {
     let x = mmap.as_ptr() as *const T;
-    unsafe { x.offset(idx as isize).read() }
+    unsafe { x.add(idx).read() }
 }
 
 #[derive(Debug)]
@@ -75,6 +75,7 @@ pub trait Struct {
     fn beg_at(&self, pos: u64) -> u64;
     fn end_at(&self, pos: u64) -> u64;
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
 impl Struct for MapStructure32 {

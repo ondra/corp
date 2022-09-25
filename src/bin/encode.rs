@@ -7,7 +7,6 @@ use std::hash::Hasher;
 use std::collections::hash_map::DefaultHasher;
 
 use std::collections::HashMap;
-use std::mem::size_of;
 
 use std::cmp::{min};
 use std::io::BufWriter;
@@ -30,7 +29,7 @@ impl BinFile {
     }
 
     pub fn put(&mut self, val: u64) -> Result<(), Box<dyn std::error::Error>> {
-        self.f.write(&val.to_le_bytes())?;
+        self.f.write_all(&val.to_le_bytes())?;
         Ok(())
     }
 
@@ -50,7 +49,7 @@ impl WriteBits {
     fn new(target: BufWriter<File>) -> WriteBits {
         WriteBits {
             part: 0,
-            _freebits: size_of::<Atom>()*8,
+            _freebits: Atom::BITS as usize,
             target,
         }
     }
@@ -60,14 +59,14 @@ impl WriteBits {
     }
 
     fn usedbits(&self) -> usize {
-        size_of::<Atom>()*8 - self._freebits
+        Atom::BITS as usize - self._freebits
     }
 
     // write a single Elias delta-coded value consisting of an
     // gamma-encoded length followed by the binary value
     fn delta(&mut self, val: u64) {
         assert!(val > 0);
-        let mut len = size_of::<u64>()*8 - val.leading_zeros() as usize; 
+        let mut len = u64::BITS as usize - val.leading_zeros() as usize; 
         self.gamma(len as u64);
         let mut rest = ( val & !(1<<(len-1)) ) as Atom;
         len -= 1;
@@ -76,7 +75,7 @@ impl WriteBits {
             let curatom_len = min(self.freebits(), len);
             self.part |= rest << self.usedbits();
             self._freebits -= curatom_len;
-            rest = rest >> curatom_len;
+            rest >>= curatom_len;
             len -= curatom_len;
         }
     }
@@ -85,7 +84,7 @@ impl WriteBits {
     // unary-encoded length followed by the binary value
     fn gamma(&mut self, val: u64) {
         assert!(val > 0);
-        let mut len = size_of::<u64>()*8 - val.leading_zeros() as usize; 
+        let mut len = u64::BITS as usize - val.leading_zeros() as usize; 
         self.unary(len as u64);
         let mut rest = ( val & !(1<<(len-1)) ) as Atom;
         len -= 1;
@@ -94,7 +93,7 @@ impl WriteBits {
             let curatom_len = min(self.freebits(), len);
             self.part |= rest << self.usedbits();
             self._freebits -= curatom_len;
-            rest = rest >> curatom_len;
+            rest >>= curatom_len;
             len -= curatom_len;
         }
     }
@@ -113,7 +112,7 @@ impl WriteBits {
         if self.freebits() == 0 {
             self.emit(self.part);
             self.part = 0;
-            self._freebits = size_of::<Atom>()*8;
+            self._freebits = Atom::BITS as usize;
         }
     }
 
@@ -138,7 +137,7 @@ impl WriteBits {
     fn finish(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.usedbits() > 0 {
             let num_bytes = (self.usedbits()+7) % 8;
-            self.target.write(&self.part.to_le_bytes()[0..num_bytes])?;
+            self.target.write_all(&self.part.to_le_bytes()[0..num_bytes])?;
         }
         self.target.flush()?;
         Ok(())
@@ -146,7 +145,7 @@ impl WriteBits {
 
     // output a single atom
     fn emit(&mut self, part: Atom) {
-        self.target.write(&part.to_le_bytes()).unwrap(); // FIXME unwrap
+        self.target.write_all(&part.to_le_bytes()).unwrap(); // FIXME unwrap
         // eprintln!("atom {}", part);
     }
 
@@ -174,7 +173,7 @@ fn main() {
 
     let mut wb = BinFile::new("/tmp/xyz.text").unwrap();
     wb.f.seek(SeekFrom::Start(0)).unwrap();
-    wb.f.write(&[0xa3u8, 'f' as u8, 'i' as u8, 'n' as u8, 'D' as u8, 'T' as u8]).unwrap();
+    wb.f.write_all(&[0xa3u8, b'f', b'i', b'n', b'D', b'T']).unwrap();
 
     wb.f.seek(SeekFrom::Start(32)).unwrap();
 
@@ -205,7 +204,7 @@ fn main() {
             None => {
                 lex.insert(buf.clone(), nextid);
                 let curid = nextid;
-                nextid = nextid + 1;
+                nextid += 1;
                 curid
             }
         };

@@ -71,7 +71,7 @@ impl Iterator for DynIter<'_> {
 impl Attr for DynAttr {
     fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_> {
         let it = self.fromattr.iter_ids(frompos);
-        Box::new(DynIter {di: it, da: &self})
+        Box::new(DynIter {di: it, da: self})
         //Box::new(vec![1u32, 2, 3].into_iter())
     }
     fn id2str(&self, id: u32) -> &str { self.lex.id2str(id) }
@@ -119,7 +119,7 @@ impl fmt::Display for AttrNotFound {
 impl std::error::Error for AttrNotFound {}
 
 fn rebase_path(conf_filename: &str, path: &str) -> Result<String, Box<dyn std::error::Error>> {
-    Ok(if path.starts_with(".") {
+    Ok(if path.starts_with('.') {
         let canonical_conf_filename = std::fs::canonicalize(conf_filename)?;
         let mut dirname = canonical_conf_filename.parent().unwrap().to_path_buf();
         dirname.push(path);
@@ -141,7 +141,7 @@ impl Corpus {
     }
 
     pub fn rebase_path(&self, path: &str) -> Result<String, Box<dyn std::error::Error>> {
-        Ok(rebase_path(&self.name, path)?.to_string())
+        rebase_path(&self.name, path)
     }
 
     pub fn open_attribute<'a, 'b>(&'a self, name: &str) -> Result<Box<dyn Attr + Sync + Send + 'b>, Box<dyn std::error::Error>> 
@@ -150,7 +150,7 @@ impl Corpus {
         let path = self.path.clone() + "/" + name;
         if let Some(_dynamic) = attr.value("DYNAMIC") {
             let fromattrname = attr.value("FROMATTR").ok_or(AttrNotFound{})?;
-            let fromattr = self.open_attribute(fromattrname.clone())?;
+            let fromattr = self.open_attribute(fromattrname)?;
 
             let ridxf = File::open(path.clone() + ".lex.ridx")?;
             // let frqf = File::open(path.clone() + ".frq")?;
@@ -195,13 +195,8 @@ impl Corpus {
     pub fn open_struct<'a>(&self, name: &str)
         -> Result<Box<dyn structure::Struct + Sync + Send + 'a>, Box<dyn std::error::Error>>
     {
-        let s = self.conf.structure(&name).ok_or(AttrNotFound{})?;
-        let type64 = match s.value("TYPE") {
-            Some("file64") => true,
-            Some("map64") => true,
-            _ => false,
-        };
-
+        let s = self.conf.structure(name).ok_or(AttrNotFound{})?;
+        let type64 = matches!(s.value("TYPE"), Some("file64") | Some("map64"));
         structure::open(
             &(self.path.clone() + "/" + name),
             type64

@@ -8,7 +8,7 @@ use memmap::MmapOptions;
 #[inline]
 pub fn read<T: Sized>(mmap: &memmap::Mmap, idx: usize) -> T {
     let x = mmap.as_ptr() as *const T;
-    unsafe { x.offset(idx as isize).read() }
+    unsafe { x.add(idx).read() }
 }
 
 #[derive(Debug)]
@@ -39,7 +39,7 @@ impl MapLex {
         let mut r: u32 = l;
         while r < self.lex.len() as u32 {
             if self.lex[r as usize] == 0 { break; }
-            else { r = r + 1; }
+            else { r += 1; }
         }
         return unsafe {
             std::str::from_utf8_unchecked(&self.lex[l as usize..r as usize])
@@ -47,7 +47,7 @@ impl MapLex {
     }
 
     pub fn str2id(&self, s: &str) -> Option<u32> {
-        let mut bot = 0 as u32;
+        let mut bot = 0;
         let mut top = (self.srt.len() / 4) as u32 - 1;
         while bot <= top {
             let cur_id = (top + bot) / 2;

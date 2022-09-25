@@ -34,7 +34,7 @@ fn main() {
 
     let id = attr.str2id("test").unwrap_or(u32::MAX);
     println!("{}", id);
-    println!("");
+    println!();
 
     /*
     let revit = attr.rev.id2poss(id as u32);

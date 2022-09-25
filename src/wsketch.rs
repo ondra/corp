@@ -100,7 +100,7 @@ impl WMap {
     fn iter_from(&self, pos: u32) -> WMapIter1 {
         let max_block_items = 64;
         let mut it = WMapIter1 {
-            wmap: &self,
+            wmap: self,
             rb: bits::Reader::open(
                 as_slice_ref(&self.levels[0]), pos as usize),
             idx: 0, id: 0
@@ -123,7 +123,7 @@ impl WMap {
 
     pub fn iter_ids(&self) -> WMapIter1 {
         let it = WMapIter1{
-            wmap: &self,
+            wmap: self,
             rb: bits::Reader::open(as_slice_ref(&self.levels[0]), 32*8),
             idx: 0, id: 0
         };
@@ -173,7 +173,7 @@ impl <'a> Iterator for WMapIter1<'a> {
         read_record(&mut self.rb, &mut self.idx, &mut self.id, adjust_idx);
         let cnt = self.rb.delta() as u64;
         let frq = self.rb.delta() as u64;
-        Some(WMapItem1 { wmap: &self.wmap,
+        Some(WMapItem1 { wmap: self.wmap,
             id: self.id, idx: self.idx, cnt, frq })
     }
 }
@@ -216,7 +216,7 @@ impl <'a> Iterator for WMapIter2<'a> {
         let rnk = (self.rb.delta() as f32) 
             / self.wmap.norm_sc + self.wmap.min_sc;
         let frq = self.rb.delta() as u64;
-        Some(WMapItem2 { wmap: &self.wmap, 
+        Some(WMapItem2 { wmap: self.wmap, 
             id: self.id, idx: self.idx, cnt, frq, rnk })
     }
 }
@@ -272,7 +272,7 @@ impl <'a> Iterator for WMapIter3<'a> {
                 let _ftt = self.rb.delta() -1;
             }
         }
-        Some(WMapItem3 { wmap: &self.wmap,
+        Some(WMapItem3 { wmap: self.wmap,
             id: self.id, idx: self.idx, cnt, frq, rnk })
     }
 }
@@ -354,7 +354,7 @@ pub struct WSLex<'a> {
 impl WSLex<'_> {
     pub fn open<'a, 'b>(wsbase: &'a str, wsattr: &'b dyn Attr)
             -> Result<WSLex<'b>, Box<dyn std::error::Error>> {
-        let grlex = MapLex::open(&wsbase)?;
+        let grlex = MapLex::open(wsbase)?;
         let ml = MapLex::open(&(wsbase.to_string() + ".coll"));
         let colllex = match ml {  // distinguish between error and nonexistence
             Ok(a) => Some(a),
