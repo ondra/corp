@@ -98,17 +98,12 @@ impl WMap {
     }
 
     fn iter_from(&self, pos: u32) -> WMapIter1 {
-        let max_block_items = 64;
-        let mut it = WMapIter1 {
+        WMapIter1 {
             wmap: self,
             rb: bits::Reader::open(
                 as_slice_ref(&self.levels[0]), pos as usize),
             idx: 0, id: 0
-        };
-        for _ in 0..(pos % max_block_items) {
-            it.next();
         }
-        it
     }
 
     pub fn find_id(&self, id: u32) -> Option<WMapItem1<'_>> {
@@ -116,18 +111,17 @@ impl WMap {
         for v in self.iter_from(bs) {
             if v.id < id { continue; }
             else if v.id == id { return Some(v); }
-            else { return None; }            
+            else { return None; }
         }
-        None 
+        None
     }
 
     pub fn iter_ids(&self) -> WMapIter1 {
-        let it = WMapIter1{
+        WMapIter1{
             wmap: self,
             rb: bits::Reader::open(as_slice_ref(&self.levels[0]), 32*8),
             idx: 0, id: 0
-        };
-        it
+        }
     }
 }
 
