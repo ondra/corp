@@ -7,6 +7,7 @@ use crate::lex::MapLex;
 use crate::corp::Attr;
 
 use std::fmt;
+use std::fmt::Write;
 
 #[derive(Debug)]
 pub struct WMap {
@@ -231,10 +232,18 @@ impl WMapItem2<'_> {
 
 #[derive(Debug)]
 pub struct WMapItem3<'a> { wmap: &'a WMap,
-    pub id: u32, pub idx: usize, pub cnt: u64, pub frq: u64, pub rnk: f32 }
+    pub id: u32, pub idx: usize, pub cnt: u64, pub frq: u64, pub rnk: f32,
+    pub lcm: Vec<i32>,    
+}
 impl fmt::Display for WMapItem3<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(3 id:{} seek:{} cnt:{} frq:{} rnk:{})", self.id, self.idx, self.cnt, self.frq, self.rnk)
+        write!(f, "(3 id:{} seek:{} cnt:{} frq:{} rnk:{} lcm:{})",
+               self.id, self.idx, self.cnt, self.frq, self.rnk,
+               self.lcm.iter().fold(
+                   String::new(),
+                   |mut s, &n| { write!(s, "{}", n).ok(); s}
+               )
+        )
     }
 }
 pub struct WMapIter3<'a> {
@@ -254,11 +263,15 @@ impl <'a> Iterator for WMapIter3<'a> {
         let rnk = (self.rb.delta() as f32) 
             / self.wmap.norm_sc + self.wmap.min_sc;
         let frq = self.rb.delta() as u64;
+        let mut lcm = Vec::<i32>::new();
         if self.wmap.has_commonest {
             let len = self.rb.gamma();
             for _ in 0..len-1 {
-                let _lcm = self.rb.delta() -1;
+                let cm = self.rb.delta() -1;
+                lcm.push(cm as i32)
             }
+        } else {
+            lcm.push(-1)
         }
         if self.wmap.has_ftt {
             let len = self.rb.gamma();
@@ -267,7 +280,7 @@ impl <'a> Iterator for WMapIter3<'a> {
             }
         }
         Some(WMapItem3 { wmap: self.wmap,
-            id: self.id, idx: self.idx, cnt, frq, rnk })
+            id: self.id, idx: self.idx, cnt, frq, rnk, lcm })
     }
 }
 

@@ -8,6 +8,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let wsattrname = corp.get_conf("WSATTR").unwrap();
     let wsattr = corp.open_attribute(&wsattrname)?;
+    let defattrname = corp.get_conf("DEFAULTATTR").unwrap();
+    let defattr = corp.open_attribute(&defattrname)?;
     let wsbase = corp.get_conf("WSBASE").unwrap();
     let ws = WMap::new(&wsbase)?;
     let wslex = WSLex::open(&wsbase, wsattr.as_ref())?;
@@ -18,9 +20,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let head = ws.find_id(head_id).ok_or("head not found in word sketch")?;
         for rel in head.iter() {
             for coll in rel.iter() {
-                println!("{}\t{}\t{}\t{}\t{}",
+                print!("{}\t{}\t{}\t{}\t{}\t",
                          wslex.id2head(head.id), wslex.id2rel(rel.id), wslex.id2coll(coll.id),
                          coll.cnt, coll.rnk);
+                if coll.lcm.len() >= 2 {
+                for i in 0..coll.lcm.len()-1 {
+                    print!("{}", defattr.id2str(coll.lcm[i] as u32));
+                    if i != coll.lcm.len()-2 {
+                        print!(" ");
+                    }
+                }
+                }
+                println!();
+
+                let p = coll.iter();
+                for x in p {
+                    if x.0 > 1000_000_000_000 {
+                        println!("{}", x.0); 
+                    }
+                    if let Some(n) = x.1 {
+                        if n < -10 || n > 10 {
+                            println!("{}", n);
+                        }
+                        if (x.0 as isize) < (n as isize) {
+                            println!("--------------- {}", n);
+                            panic!();
+                        }
+                    }
+                }
                 // for (pos, collrelpos) in c {
                 //     println!("-- # {} {}", pos, collrelpos.unwrap_or(9999));
                 // }
@@ -30,9 +57,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for head in ws.iter_ids() {
             for rel in head.iter() {
                 for coll in rel.iter() {
-                    println!("{}\t{}\t{}\t{}\t{}",
-                             wslex.id2head(head.id), wslex.id2rel(rel.id), wslex.id2coll(coll.id),
-                             coll.cnt, coll.rnk);
+                    print!("{}\t{}\t{}\t{}\t{}\t",
+                         wslex.id2head(head.id), wslex.id2rel(rel.id), wslex.id2coll(coll.id),
+                         coll.cnt, coll.rnk);
+                    for i in 0..coll.lcm.len()-1 {
+                        print!("{}", defattr.id2str(coll.lcm[i] as u32));
+                        if i != coll.lcm.len()-2 {
+                            print!(" ");
+                        }
+                    }
+                    println!();
                 // for (pos, collrelpos) in c {
                 //     println!("-- # {} {}", pos, collrelpos.unwrap_or(9999));
                 // }
