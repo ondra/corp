@@ -352,15 +352,15 @@ impl ExactSizeIterator for WMapRevStream<'_> {
     fn len(&self) -> usize { self.remaining }
 }
 
-pub struct WSLex<'a> {
+pub struct WSLex {
     grlex: MapLex,
     colllex: Option<MapLex>,
-    wsattr: &'a dyn Attr,
+    wsattr: Box<dyn Attr>,
 }
 
-impl WSLex<'_> {
-    pub fn open<'a, 'b>(wsbase: &'a str, wsattr: &'b dyn Attr)
-            -> Result<WSLex<'b>, Box<dyn std::error::Error>> {
+impl WSLex {
+    pub fn open<'a>(wsbase: &'a str, wsattr: Box<dyn Attr>)
+            -> Result<WSLex, Box<dyn std::error::Error>> {
         let grlex = MapLex::open(wsbase)?;
         let ml = MapLex::open(&(wsbase.to_string() + ".coll"));
         let colllex = match ml {  // distinguish between error and nonexistence
