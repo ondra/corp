@@ -129,15 +129,43 @@ fn rebase_path(conf_filename: &str, path: &str) -> Result<String, Box<dyn std::e
     })
 }
 
+const FALLBACK_MANATEE_REGISTRY: [&str; 1] = ["/corpora/registry/"];
+fn get_registry_paths() -> Vec<String> {
+    std::env::var("MANATEE_REGISTRY")
+        .unwrap_or("".to_string())
+        .split(":")
+        .filter(|s| !s.is_empty())
+        .chain(FALLBACK_MANATEE_REGISTRY)
+        .map(|s| {s.to_string()})
+        .collect::<Vec<String>>()
+}
+
+fn find_config(corpname: &str) -> Result<String, Box<dyn std::error::Error>> {
+    if corpname.starts_with(".") { // cwd-relative path
+        Ok(corpname.to_string())
+    } else if corpname.starts_with("/") { // absolute path, do nothing
+        Ok(corpname.to_string())
+    } else { // name relative to MANATEE_REGISTRY
+        for path in get_registry_paths() {
+            let fullpath = std::path::Path::new(&path).join(corpname);
+            if fullpath.is_file() {
+                return Ok(fullpath.to_string_lossy().into_owned());
+            }
+        }
+        Err("could not find the corpus configuration file in MANATEE_REGISTRY".into())
+    }
+}
+
 impl Corpus {
-    pub fn open(conf_filename: &str) -> Result<Corpus, Box<dyn std::error::Error>> {
+    pub fn open(corpname: &str) -> Result<Corpus, Box<dyn std::error::Error>> {
+        let conf_filename = find_config(&corpname)?;
         let mut file = File::open(&conf_filename)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
         let conf = corpconf::parse_conf_opt(&buf)?;
-        let path = rebase_path(conf_filename, conf.value("PATH").ok_or(AttrNotFound{})?)?;
+        let path = rebase_path(&conf_filename, conf.value("PATH").ok_or(AttrNotFound{})?)?;
         let path = path.trim_end_matches('/').to_string() + "/";
-        Ok(Corpus{ path, name: conf_filename.to_string(), conf })
+        Ok(Corpus{ path, name: conf_filename, conf })
     }
 
     pub fn rebase_path(&self, path: &str) -> Result<String, Box<dyn std::error::Error>> {
