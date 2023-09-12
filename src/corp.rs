@@ -231,6 +231,12 @@ impl Corpus {
         )
     }
 
+    pub fn open_structtext<'a>(&self, structname: &str, attrname: &str)
+        -> Result<text::Int, Box<dyn std::error::Error>>
+    {
+        Ok(text::Int::open(&(self.path.clone() + "/" + structname + "." + attrname))?)
+    }
+
     pub fn get_conf(&self, name: &str) -> Option<String> {
         if let Some(val) = self.conf.value(name) {
             return Some(val.to_string());
