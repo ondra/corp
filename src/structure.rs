@@ -76,6 +76,7 @@ pub trait Struct: std::fmt::Debug {
     fn end_at(&self, pos: u64) -> u64;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool { self.len() == 0 }
+    /*
     fn find_beg(&self, pos: u64, start_at_struct_pos: u64) -> Option<u64> {
         let mut incr = 1u64;
         let mut curr = 0u64;
@@ -100,7 +101,18 @@ pub trait Struct: std::fmt::Debug {
             None
         }
     }
+    */
+    fn find_end(&self, pos: u64) -> u64 {
+        find_end_i(self, pos)
+    }
+    fn find_beg(&self, pos: u64) -> u64 {
+        find_beg_i(self, pos)
+    }
+    fn num_at_pos(&self, pos: u64) -> Option<u64> {
+        num_at_pos_i(self, pos)
+    }
 }
+
 
 impl Struct for MapStructure32 {
     fn beg_at(&self, pos: u64) -> u64 { self.beg_at(pos) }
@@ -112,4 +124,96 @@ impl Struct for MapStructure64 {
     fn beg_at(&self, pos: u64) -> u64 { self.beg_at(pos) }
     fn end_at(&self, pos: u64) -> u64 { self.end_at(pos) }
     fn len(&self) -> usize { self.rng.len() / 16 }
+}
+
+fn find_end_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
+    let mut curr = 0u64;
+    let last = s.len() as u64 - 1;
+    let finval = u64::MAX;
+    if !(curr < last) { return finval; }
+    let mut incr = 1u64;
+    while (curr + incr) < last &&
+        /* abs( */ s.end_at(curr + incr) /* ) */ <= pos
+            {
+        curr += incr;
+        incr *= 2;
+    }
+    while incr > 0 {
+        if (curr + incr) < last &&
+            /* abs( */ s.end_at(curr + incr) /* ) */ <= pos
+                {
+            curr += incr;
+        }
+        incr /= 2;
+    }
+    /*
+    // go back out of nested ranges (end < 0)
+    while (prev < curr && s.end_at(curr) < 0) {
+        curr -= 1;
+    }
+    // go forward to locate the matching end
+    while (curr < last && s.end_at(curr).abs() < pos) {
+        curr += 1;
+    }
+    */
+    if curr < last { s.beg_at(curr) }
+    else { finval }
+}
+
+fn find_beg_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
+    let mut curr = 0u64;
+    let prev = curr;
+    let last = s.len() as u64 - 1;
+    let finval = u64::MAX;
+    if !(curr < last) { return finval; }
+    let mut incr = 1u64;
+    while (curr + incr) < last &&
+        /* abs( */ s.beg_at(curr + incr) /* ) */ <= pos {
+        curr += incr;
+        incr *= 2;
+    }
+    while incr > 0 {
+        if (curr + incr) < last &&
+            /* abs( */ s.beg_at(curr + incr) /* ) */ <= pos {
+            curr += incr;
+        }
+        incr /= 2;
+    }
+    if s.beg_at(curr) < pos {
+        curr += 1;
+    } else if prev < curr {
+        let mut curr_1 = curr;
+        while prev < curr && s.beg_at(curr_1) == pos {
+            curr -= 1;
+            curr_1 -= 1;
+        }
+    }
+    if curr < last { s.beg_at(curr) }
+    else { finval }
+}
+
+fn num_at_pos_i(s: &(impl Struct + ?Sized), pos: u64) -> Option<u64> {
+    let mut b = s.find_end(pos + 1);
+    if b == u64::MAX {
+        return None;
+    }
+    if b <= pos {
+        // let rngsize = s.end_at(b) - s.beg_at(b);
+
+        // try to find smaller range in nested ones
+        // TODO
+        return Some(b);
+    }
+    // handling of empty structures around pos
+    if s.end_at(b) == s.beg_at(b) && s.beg_at(b) == pos + 1 {
+        // empty struct following pos
+        return Some(b);
+    }
+    if b > 0 {
+        b -= 1;
+    }
+    if s.beg_at(b) == s.beg_at(b) && s.beg_at(b) == pos {
+        return Some(b)
+    }
+    return None
 }
