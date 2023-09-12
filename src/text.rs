@@ -30,6 +30,7 @@ pub struct GigaDelta {
 
 pub trait Text: std::fmt::Debug {
     fn at(&self, pos: u64) -> DeltaIter;
+    fn size(&self) -> usize;
 }
 
 impl GigaDelta {
@@ -63,10 +64,15 @@ impl GigaDelta {
         while rest != 0 { rb.delta(); rest -= 1; };
         DeltaIter { remaining: self.positions as u64 - pos, rb }
     }
+
+    pub fn size(&self) -> usize {
+        self.positions
+    }
 }
 
 impl Text for Delta {
     fn at(&self, pos: u64) -> DeltaIter { self.at(pos) }
+    fn size(&self) -> usize { self.size() }
 }
 
 #[derive(Debug)]
@@ -112,8 +118,46 @@ impl Delta {
         while rest != 0 { rb.delta(); rest -= 1; };
         DeltaIter { remaining: self.positions as u64 - pos, rb }
     }
+
+    pub fn size(&self) -> usize {
+        self.positions
+    }
 }
 
 impl Text for GigaDelta {
     fn at(&self, pos: u64) -> DeltaIter { self.at(pos) }
+    fn size(&self) -> usize { self.size() }
 }
+
+#[derive(Debug)]
+pub struct Int {
+    name: String,
+    positions: usize,
+    text: memmap::Mmap,
+}
+
+impl Int {
+    pub fn open(base: &str) -> Result<Int, std::io::Error> {
+        let text = File::open(base.to_string() + ".text")?;
+        let mut t = Int {
+            positions: 0,
+            name: base.to_string(),
+            text: unsafe { MmapOptions::new().map(text.file())? },
+        };
+
+        t.positions = (t.text.len() / 4) as usize;
+        Ok(t)
+    }
+
+    pub fn get(&self, pos: u64) -> u32 {
+        as_slice_ref::<u32>(&self.text)[pos as usize]
+    }
+
+    pub fn size(&self) -> usize {
+        self.positions
+    }
+}
+
+//impl Text for Int {
+//    fn at(&self, pos: u64) -> DeltaIter { self.at(pos) }
+// }
