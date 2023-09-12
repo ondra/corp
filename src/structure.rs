@@ -71,11 +71,35 @@ pub fn open(base: &str, type64: bool) -> std::result::Result<Box<dyn Struct + Sy
     else { Box::new(MapStructure32::open(base)?) })
 }
 
-pub trait Struct {
+pub trait Struct: std::fmt::Debug {
     fn beg_at(&self, pos: u64) -> u64;
     fn end_at(&self, pos: u64) -> u64;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool { self.len() == 0 }
+    fn find_beg(&self, pos: u64, start_at_struct_pos: u64) -> Option<u64> {
+        let mut incr = 1u64;
+        let mut curr = 0u64;
+        let len = self.len() as u64;
+
+        while (curr + incr) < len && self.beg_at(curr + incr) <= pos {
+            curr += incr;
+            incr *= 2;
+        }
+        while incr > 0 {
+            if (curr + incr) < len && self.beg_at(curr + incr) <= pos {
+                curr += incr;
+            }
+            incr /= 2;
+        }
+        //if self.beg_at(curr) < pos {
+        //    curr += 1;
+        //}
+        if pos >= self.beg_at(curr) && pos < self.end_at(curr) {
+            Some(curr)
+        } else {
+            None
+        }
+    }
 }
 
 impl Struct for MapStructure32 {
