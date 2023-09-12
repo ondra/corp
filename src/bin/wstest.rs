@@ -7,12 +7,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let corp = Corpus::open(&corpname)?;
 
     let wsattrname = corp.get_conf("WSATTR").unwrap();
-    let wsattr = corp.open_attribute(&wsattrname)?;
     let defattrname = corp.get_conf("DEFAULTATTR").unwrap();
     let defattr = corp.open_attribute(&defattrname)?;
     let wsbase = corp.get_conf("WSBASE").unwrap();
     let ws = WMap::new(&wsbase)?;
-    let wslex = WSLex::open(&wsbase, wsattr.as_ref())?;
+    let wsattr = corp.open_attribute(&wsattrname)?;
+    let wslex = WSLex::open(&wsbase, wsattr)?;
+    let wsattr = corp.open_attribute(&wsattrname)?;
     // let r = ws.find_id(1); println!("a {:?}", r);
 
     if let Some(head_str) = std::env::args().nth(2) {

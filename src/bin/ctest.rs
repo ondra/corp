@@ -22,14 +22,36 @@ fn main() {
     println!("{}", corp.conf.value("PATH").unwrap_or("PATH not found"));
     println!("{:?}", attr);
 
+    let s = corp.open_struct("doc").expect("structure open failed");
+    println!("{:?}", s);
+    let st = corp.open_structtext("doc", "month").expect("text open failed");
+    println!("{:?}", st);
 
     let mut it = attr.iter_ids(100);
 
+    /*
     for i in 100..200 {
         let id = it.next().unwrap();
-        println!("{:?}: {} {}",i, id, attr.id2str(id as u32) )
+        println!("{:?}: {} {} {:?}",i, id, attr.id2str(id as u32), s.find_beg(i, 0) )
+    }
+    */
+
+    println!();
+    let mut laststructno: Option<u64> = None;
+    let mut tot = 0;
+    for dn in (0..attr.text().size() as u64).step_by(2) {
+        let i = dn;
+        // let mut it = attr.iter_ids(i);
+        // let id = it.next().unwrap();
+        let beg = s.find_beg(i,
+                             // laststructno.unwrap_or(0)
+                             0
+                             );
+        // println!("{:?}: {} {} {:?}", i, id, attr.id2str(id as u32), beg )
+        tot += beg.unwrap_or(0);
     }
 
+    println!("{}", tot);
     //println!("{:?}", &attr.rev);
 
     let id = attr.str2id("test").unwrap_or(u32::MAX);
