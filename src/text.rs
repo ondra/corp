@@ -130,6 +130,7 @@ impl Text for GigaDelta {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Int {
     name: String,
     positions: usize,
