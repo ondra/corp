@@ -45,10 +45,10 @@ fn main() {
         // let id = it.next().unwrap();
         let beg = s.find_beg(i,
                              // laststructno.unwrap_or(0)
-                             0
+                             //0
                              );
         // println!("{:?}: {} {} {:?}", i, id, attr.id2str(id as u32), beg )
-        tot += beg.unwrap_or(0);
+        tot += beg; //.unwrap_or(0);
     }
 
     println!("{}", tot);

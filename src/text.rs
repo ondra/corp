@@ -29,7 +29,8 @@ pub struct GigaDelta {
 }
 
 pub trait Text: std::fmt::Debug {
-    fn at(&self, pos: u64) -> DeltaIter;
+    fn posat(&self, pos: u64) -> Option<DeltaIter<'_>>;
+    fn structat(&self, pos: u64) -> Option<IntIter<'_>>;
     fn size(&self) -> usize;
 }
 
@@ -71,7 +72,8 @@ impl GigaDelta {
 }
 
 impl Text for Delta {
-    fn at(&self, pos: u64) -> DeltaIter { self.at(pos) }
+    fn posat(&self, pos: u64) -> Option<DeltaIter> { Some(self.at(pos)) }
+    fn structat(&self, _pos: u64) -> Option<IntIter<'_>> { None }
     fn size(&self) -> usize { self.size() }
 }
 
@@ -125,7 +127,8 @@ impl Delta {
 }
 
 impl Text for GigaDelta {
-    fn at(&self, pos: u64) -> DeltaIter { self.at(pos) }
+    fn posat(&self, pos: u64) -> Option<DeltaIter> { Some(self.at(pos)) }
+    fn structat(&self, _pos: u64) -> Option<IntIter<'_>> { None }
     fn size(&self) -> usize { self.size() }
 }
 
@@ -146,7 +149,7 @@ impl Int {
             text: unsafe { MmapOptions::new().map(text.file())? },
         };
 
-        t.positions = (t.text.len() / 4) as usize;
+        t.positions = (t.text.len() / 4) as usize - 4;
         Ok(t)
     }
 
@@ -159,6 +162,30 @@ impl Int {
     }
 }
 
-//impl Text for Int {
-//    fn at(&self, pos: u64) -> DeltaIter { self.at(pos) }
-// }
+#[derive(Debug)]
+pub struct IntIter<'a> {
+    pub position: usize,
+    pub inttext: &'a Int,
+}
+
+impl Iterator for IntIter<'_> {
+    type Item = u32;
+    fn next(&mut self) -> Option<u32> {
+        if self.position < self.inttext.positions {
+            let ret = Some(self.inttext.get(self.position as u64 + 4));
+            self.position += 1;
+            ret
+        } else { None }
+    }
+}
+
+impl Text for Int {
+    fn structat(&self, pos: u64) -> Option<IntIter<'_>> {
+        Some(IntIter {
+            position: pos as usize,
+            inttext: &self,
+        })
+    }
+    fn posat(&self, _pos: u64) -> Option<DeltaIter<'_>> { None }
+    fn size(&self) -> usize { self.positions as usize }
+}
