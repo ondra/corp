@@ -32,6 +32,7 @@ pub trait Text: std::fmt::Debug {
     fn posat(&self, pos: u64) -> Option<DeltaIter<'_>>;
     fn structat(&self, pos: u64) -> Option<IntIter<'_>>;
     fn size(&self) -> usize;
+    fn get(&self, pos: u64) -> u32;
 }
 
 impl GigaDelta {
@@ -75,6 +76,7 @@ impl Text for Delta {
     fn posat(&self, pos: u64) -> Option<DeltaIter> { Some(self.at(pos)) }
     fn structat(&self, _pos: u64) -> Option<IntIter<'_>> { None }
     fn size(&self) -> usize { self.size() }
+    fn get(&self, pos: u64) -> u32 { self.at(pos).next().unwrap() }
 }
 
 #[derive(Debug)]
@@ -130,6 +132,7 @@ impl Text for GigaDelta {
     fn posat(&self, pos: u64) -> Option<DeltaIter> { Some(self.at(pos)) }
     fn structat(&self, _pos: u64) -> Option<IntIter<'_>> { None }
     fn size(&self) -> usize { self.size() }
+    fn get(&self, pos: u64) -> u32 { self.at(pos).next().unwrap() }
 }
 
 #[derive(Debug)]
@@ -188,4 +191,5 @@ impl Text for Int {
     }
     fn posat(&self, _pos: u64) -> Option<DeltaIter<'_>> { None }
     fn size(&self) -> usize { self.positions as usize }
+    fn get(&self, pos: u64) -> u32 { self.get(pos) }
 }
