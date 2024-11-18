@@ -7,6 +7,8 @@ use crate::text;
 use crate::rev;
 use crate::structure;
 
+use crate::text::Text;
+
 use crate::util::as_slice_ref;
 
 #[derive(Debug)]
@@ -128,7 +130,7 @@ impl Attr for DynAttr {
     fn id2str(&self, id: u32) -> &str { self.lex.id2str(id) }
     fn str2id(&self, s: &str) -> Option<u32> { self.lex.str2id(s) }
     fn revidx(&self) -> &dyn rev::Rev { self.fromattr.revidx() }
-    fn text(&self) -> &dyn text::Text { self.fromattr.text() }
+    fn text(&self) -> &dyn text::Text { return self }
     fn id_range(&self) -> u32 { self.lex.id_range() }
     fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + '_>, Box<dyn std::error::Error>> {
         match t {
@@ -136,6 +138,13 @@ impl Attr for DynAttr {
             _ => open_freq(&self.path, t),
         }
     }
+}
+
+impl Text for DynAttr {
+    fn posat(&self, pos: u64) -> Option<text::DeltaIter<'_>> { panic!(); None }
+    fn structat(&self, pos: u64) -> Option<text::IntIter<'_>> { panic!(); None }
+    fn size(&self) -> usize { self.fromattr.text().size() }
+    fn get(&self, pos: u64) -> u32 { as_slice_ref(&self.ridx)[self.fromattr.text().get(pos) as usize] }
 }
 
 pub trait Frequency {
