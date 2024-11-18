@@ -151,11 +151,10 @@ fn find_end_i(s: &(impl Struct + ?Sized), pos: u64) -> (u64, u64) {
     while (prev < curr && s.end_at(curr) < 0) {
         curr -= 1;
     }
-    // go forward to locate the matching end
-    while (curr < last && s.end_at(curr).abs() < pos) {
+    */
+    while (curr < last && s.end_at(curr) /*.abs()*/ < pos) {
         curr += 1;
     }
-    */
     if curr < last { (curr, s.beg_at(curr)) }
     else { (finval, finval) }
 }
