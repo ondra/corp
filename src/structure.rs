@@ -102,7 +102,7 @@ pub trait Struct: std::fmt::Debug {
         }
     }
     */
-    fn find_end(&self, pos: u64) -> u64 {
+    fn find_end(&self, pos: u64) -> (u64, u64) {
         find_end_i(self, pos)
     }
     fn find_beg(&self, pos: u64) -> u64 {
@@ -126,11 +126,11 @@ impl Struct for MapStructure64 {
     fn len(&self) -> usize { self.rng.len() / 16 }
 }
 
-fn find_end_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
+fn find_end_i(s: &(impl Struct + ?Sized), pos: u64) -> (u64, u64) {
     let mut curr = 0u64;
     let last = s.len() as u64 - 1;
     let finval = u64::MAX;
-    if !(curr < last) { return finval; }
+    if !(curr < last) { return (finval, finval); }
     let mut incr = 1u64;
     while (curr + incr) < last &&
         /* abs( */ s.end_at(curr + incr) /* ) */ <= pos
@@ -156,8 +156,8 @@ fn find_end_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
         curr += 1;
     }
     */
-    if curr < last { s.beg_at(curr) }
-    else { finval }
+    if curr < last { (curr, s.beg_at(curr)) }
+    else { (finval, finval) }
 }
 
 fn find_beg_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
@@ -193,27 +193,27 @@ fn find_beg_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
 }
 
 fn num_at_pos_i(s: &(impl Struct + ?Sized), pos: u64) -> Option<u64> {
-    let mut b = s.find_end(pos + 1);
-    if b == u64::MAX {
+    let (mut structpos, corppos) = s.find_end(pos + 1);
+    if structpos == u64::MAX {
         return None;
     }
-    if b <= pos {
+    if corppos <= pos {
         // let rngsize = s.end_at(b) - s.beg_at(b);
 
         // try to find smaller range in nested ones
         // TODO
-        return Some(b);
+        return Some(structpos);
     }
     // handling of empty structures around pos
-    if s.end_at(b) == s.beg_at(b) && s.beg_at(b) == pos + 1 {
+    if s.end_at(structpos) == s.beg_at(structpos) && s.beg_at(structpos) == pos + 1 {
         // empty struct following pos
-        return Some(b);
+        return Some(structpos);
     }
-    if b > 0 {
-        b -= 1;
+    if structpos > 0 {
+        structpos -= 1;
     }
-    if s.beg_at(b) == s.beg_at(b) && s.beg_at(b) == pos {
-        return Some(b)
+    if s.beg_at(structpos) == s.beg_at(structpos) && s.beg_at(structpos) == pos {
+        return Some(structpos)
     }
     return None
 }

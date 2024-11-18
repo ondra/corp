@@ -157,7 +157,7 @@ impl Int {
     }
 
     pub fn get(&self, pos: u64) -> u32 {
-        as_slice_ref::<u32>(&self.text)[pos as usize]
+        as_slice_ref::<u32>(&self.text)[pos as usize + 4]
     }
 
     pub fn size(&self) -> usize {
@@ -175,7 +175,7 @@ impl Iterator for IntIter<'_> {
     type Item = u32;
     fn next(&mut self) -> Option<u32> {
         if self.position < self.inttext.positions {
-            let ret = Some(self.inttext.get(self.position as u64 + 4));
+            let ret = Some(self.inttext.get(self.position as u64));
             self.position += 1;
             ret
         } else { None }
