@@ -152,7 +152,7 @@ fn find_end_i(s: &(impl Struct + ?Sized), pos: u64) -> (u64, u64) {
         curr -= 1;
     }
     */
-    while (curr < last && s.end_at(curr) /*.abs()*/ < pos) {
+    while curr < last && s.end_at(curr) /*.abs()*/ < pos {
         curr += 1;
     }
     if curr < last { (curr, s.beg_at(curr)) }

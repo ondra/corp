@@ -141,8 +141,8 @@ impl Attr for DynAttr {
 }
 
 impl Text for DynAttr {
-    fn posat(&self, pos: u64) -> Option<text::DeltaIter<'_>> { panic!(); None }
-    fn structat(&self, pos: u64) -> Option<text::IntIter<'_>> { panic!(); None }
+    fn posat(&self, _pos: u64) -> Option<text::DeltaIter<'_>> { panic!() }
+    fn structat(&self, _pos: u64) -> Option<text::IntIter<'_>> { panic!() }
     fn size(&self) -> usize { self.fromattr.text().size() }
     fn get(&self, pos: u64) -> u32 { as_slice_ref(&self.ridx)[self.fromattr.text().get(pos) as usize] }
 }
