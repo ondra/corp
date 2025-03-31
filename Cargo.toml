@@ -7,6 +7,5 @@ edition = "2024"
 corpconf = { path = "../corpconf/" }
 memmap = "0.6.2"
 fs-err = "2.11.0"
-num = "0.4.3"
 
 [lib]
