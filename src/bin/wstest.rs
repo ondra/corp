@@ -61,11 +61,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     print!("{}\t{}\t{}\t{}\t{}\t",
                          wslex.id2head(head.id), wslex.id2rel(rel.id), wslex.id2coll(coll.id),
                          coll.cnt, coll.rnk);
+                    if coll.lcm.len() >= 2 {
                     for i in 0..coll.lcm.len()-1 {
                         print!("{}", defattr.id2str(coll.lcm[i] as u32));
                         if i != coll.lcm.len()-2 {
                             print!(" ");
                         }
+                    }
                     }
                     println!();
                 // for (pos, collrelpos) in c {
