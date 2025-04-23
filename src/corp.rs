@@ -342,7 +342,9 @@ impl Corpus {
 
     pub fn get_conf(&self, name: &str) -> Option<String> {
         if let Some(val) = self.conf.value(name) {
-            return Some(val.to_string());
+            if val != "" {
+                return Some(val.to_string());
+            }
         }
         match name {
             "WSATTR" => {
