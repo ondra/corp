@@ -182,6 +182,7 @@ fn find_beg_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
         curr += 1;
     } else if prev < curr {
         let mut curr_1 = curr;
+        curr_1 -= 1;
         while prev < curr && s.beg_at(curr_1) == pos {
             curr -= 1;
             curr_1 -= 1;
