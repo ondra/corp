@@ -98,7 +98,7 @@ impl WMap {
         map0idxm[block]
     }
 
-    fn iter_from(&self, pos: u32) -> WMapIter1 {
+    fn iter_from(&self, pos: u32) -> WMapIter1<'_> {
         WMapIter1 {
             wmap: self,
             rb: bits::Reader::open(
@@ -117,7 +117,7 @@ impl WMap {
         None
     }
 
-    pub fn iter_ids(&self) -> WMapIter1 {
+    pub fn iter_ids(&self) -> WMapIter1<'_> {
         WMapIter1{
             wmap: self,
             rb: bits::Reader::open(as_slice_ref(&self.levels[0]), 32*8),

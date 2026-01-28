@@ -57,7 +57,7 @@ impl GigaDelta {
         Ok(gdt)
     }
 
-    pub fn at(&self, pos: u64) -> DeltaIter {
+    pub fn at(&self, pos: u64) -> DeltaIter<'_> {
         let mut rest = pos % 64;
         let seek = (as_slice_ref::<u16>(&self.offset))[pos as usize/64] as usize;
         let seek = seek + 
@@ -73,7 +73,7 @@ impl GigaDelta {
 }
 
 impl Text for Delta {
-    fn posat(&self, pos: u64) -> Option<DeltaIter> { Some(self.at(pos)) }
+    fn posat(&self, pos: u64) -> Option<DeltaIter<'_>> { Some(self.at(pos)) }
     fn structat(&self, _pos: u64) -> Option<IntIter<'_>> { None }
     fn size(&self) -> usize { self.size() }
     fn get(&self, pos: u64) -> u32 { self.at(pos).next().unwrap() }
@@ -114,7 +114,7 @@ impl Delta {
         Ok(dt)
     }
 
-    pub fn at(&self, pos: u64) -> DeltaIter {
+    pub fn at(&self, pos: u64) -> DeltaIter<'_> {
         let segslice = as_slice_ref::<u32>(&self.seg);
         let sp = segslice[pos as usize / self.segment_size];
         let mut rest = pos % self.segment_size as u64;
@@ -129,7 +129,7 @@ impl Delta {
 }
 
 impl Text for GigaDelta {
-    fn posat(&self, pos: u64) -> Option<DeltaIter> { Some(self.at(pos)) }
+    fn posat(&self, pos: u64) -> Option<DeltaIter<'_>> { Some(self.at(pos)) }
     fn structat(&self, _pos: u64) -> Option<IntIter<'_>> { None }
     fn size(&self) -> usize { self.size() }
     fn get(&self, pos: u64) -> u32 { self.at(pos).next().unwrap() }

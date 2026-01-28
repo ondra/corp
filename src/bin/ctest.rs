@@ -1,4 +1,5 @@
 //use crate::{lex,corp,text,bits,rev,structure};
+#![allow(warnings)] 
 
 use corp::corp;
 //use corp;

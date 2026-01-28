@@ -48,17 +48,17 @@ pub fn open(base: &str) -> Result<Box<dyn Rev + Sync + Send>, Box<dyn std::error
 
 pub trait Rev: std::fmt::Debug {
     fn count(&self, id: u32) -> u64;
-    fn id2poss(&self, id: u32) -> RevIter;
+    fn id2poss(&self, id: u32) -> RevIter<'_>;
 }
 
 impl Rev for Delta {
     fn count(&self, id: u32) -> u64 { self.count(id) }
-    fn id2poss(&self, id: u32) -> RevIter { self.id2poss(id) }
+    fn id2poss(&self, id: u32) -> RevIter<'_> { self.id2poss(id) }
 }
 
 impl Rev for DeltaDense {
     fn count(&self, id: u32) -> u64 { self.count(id) }
-    fn id2poss(&self, id: u32) -> RevIter { self.id2poss(id) }
+    fn id2poss(&self, id: u32) -> RevIter<'_> { self.id2poss(id) }
 }
 
 #[derive(Debug)]
@@ -102,7 +102,7 @@ impl Delta {
         as_slice_ref::<u32>(&self.cntf)[id as usize] as u64
     }
 
-    pub fn id2poss(&self, id: u32) -> RevIter {
+    pub fn id2poss(&self, id: u32) -> RevIter<'_> {
         let maxid_val = self.cntf.len() / 4;
         if id > maxid_val as u32 {
             panic!();
@@ -155,7 +155,7 @@ impl DeltaDense {
         cnt as u64
     }
 
-    pub fn id2poss(&self, id: u32) -> RevIter {
+    pub fn id2poss(&self, id: u32) -> RevIter<'_> {
         let (seek, cnt) = self.locate(id);
         let rb = bits::Reader::open(as_slice_ref(&self.crevf), seek as usize*8);
         RevIter {di: DeltaIter { remaining: cnt, rb }, last: -1 }
