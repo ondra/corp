@@ -200,7 +200,7 @@ impl fmt::Display for AttrNotFound {
 
 impl std::error::Error for AttrNotFound {}
 
-fn rebase_path(conf_filename: &str, path: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn rebase_path(conf_filename: &str, path: &str) -> Result<String, Box<dyn std::error::Error>> {
     Ok(if path.starts_with('.') {
         let canonical_conf_filename = std::fs::canonicalize(conf_filename)?;
         let mut dirname = canonical_conf_filename.parent().unwrap().to_path_buf();
@@ -366,4 +366,3 @@ impl Corpus {
         })
     }
 }
-
