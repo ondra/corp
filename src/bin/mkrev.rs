@@ -13,12 +13,75 @@ const REV_DENSE_MAGIC: [u8; 6] = [0xa8, b'f', b'i', b'n', b'D', b'R'];
 const USE_DELTA_DENSE_REV: bool = true;
 const CHUNK_BYTES: usize = 32 * 1024 * 1024;
 const MAX_OPEN_RUNS: usize = 32;
+const TEMP_ALIGNMULT: usize = 1;
 
 
 fn add_suffix(base: &Path, suffix: &str) -> std::path::PathBuf {
     let mut s = base.as_os_str().to_os_string();
     s.push(suffix);
     std::path::PathBuf::from(s)
+}
+
+fn pad_to_alignmult(bw: &mut BitsWriter, alignmult: usize) {
+    bw.byte_align();
+    if alignmult <= 1 {
+        return;
+    }
+    let abs_bytes = (REV_MAGIC.len() as u64) + (bw.bits_written() / 8);
+    let rem = (abs_bytes as usize) % alignmult;
+    if rem == 0 {
+        return;
+    }
+    let pad_bytes = alignmult - rem;
+    for _ in 0..pad_bytes {
+        for _ in 0..8 {
+            bw.bit(false);
+        }
+    }
+    bw.byte_align();
+}
+
+fn write_temp_delta_rev_with<F>(
+    base: &Path,
+    alignmult: usize,
+    max_id: u32,
+    mut write_positions: F,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: FnMut(u32, &mut BitsWriter) -> Result<u32, Box<dyn std::error::Error>>,
+{
+    if alignmult == 0 {
+        return Err("alignmult must be >= 1".into());
+    }
+
+    let mut revf = BufWriter::new(File::create(add_suffix(base, ".rev"))?);
+    revf.write_all(&REV_MAGIC)?;
+
+    let mut bw = BitsWriter::new(revf);
+    bw.delta((alignmult as u64) + 1);
+
+    let mut idxf = BufWriter::new(File::create(add_suffix(base, ".rev.idx"))?);
+    let mut cntf = BufWriter::new(File::create(add_suffix(base, ".rev.cnt"))?);
+    let _cntf64 = File::create(add_suffix(base, ".rev.cnt64"))?;
+
+    for id in 0..=max_id {
+        pad_to_alignmult(&mut bw, alignmult);
+        let abs_bytes = (REV_MAGIC.len() as u64) + (bw.bits_written() / 8);
+        debug_assert_eq!((abs_bytes as usize) % alignmult, 0);
+        let idx_val = abs_bytes / (alignmult as u64);
+        if idx_val > u32::MAX as u64 {
+            return Err("temp rev idx overflow".into());
+        }
+        idxf.write_all(&(idx_val as u32).to_le_bytes())?;
+        let cnt = write_positions(id, &mut bw)?;
+        cntf.write_all(&cnt.to_le_bytes())?;
+    }
+
+    let mut revf = bw.finish()?;
+    revf.flush()?;
+    idxf.flush()?;
+    cntf.flush()?;
+    Ok(())
 }
 
 fn write_rev_delta_with<F>(
@@ -194,13 +257,13 @@ fn make_iter<'a>(text: &'a dyn Text, pos: u64) -> Result<IdIter<'a>, Box<dyn std
     }
 }
 
-fn write_rev_from_pairs(
+fn write_temp_rev_from_pairs(
     base: &Path,
     max_id: u32,
     pairs: &[(u32, u64)],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut pair_idx = 0usize;
-    write_rev_with(base, max_id, |id, bw| {
+    write_temp_delta_rev_with(base, TEMP_ALIGNMULT, max_id, |id, bw| {
         let mut last: Option<u64> = None;
         let mut count: u32 = 0;
         while pair_idx < pairs.len() && pairs[pair_idx].0 == id {
@@ -214,10 +277,7 @@ fn write_rev_from_pairs(
             }
             bw.delta(gap);
             last = Some(pos);
-            count += 1;
-            if count == u32::MAX {
-                return Err("rev count overflow".into());
-            }
+            count = count.checked_add(1).ok_or("rev count overflow")?;
             pair_idx += 1;
         }
         if pair_idx < pairs.len() && pairs[pair_idx].0 < id {
@@ -269,15 +329,50 @@ fn write_rev_from_runs(
     })
 }
 
-fn remove_run(run: &RunInfo) -> Result<(), Box<dyn std::error::Error>> {
-    std::fs::remove_file(add_suffix(&run.base, ".rev"))?;
-    if USE_DELTA_DENSE_REV {
-        std::fs::remove_file(add_suffix(&run.base, ".rev.idx0"))?;
-        std::fs::remove_file(add_suffix(&run.base, ".rev.idx1"))?;
-    } else {
-        std::fs::remove_file(add_suffix(&run.base, ".rev.idx"))?;
-        std::fs::remove_file(add_suffix(&run.base, ".rev.cnt"))?;
+fn write_temp_rev_from_runs(
+    base: &Path,
+    max_id: u32,
+    runs: &[RunInfo],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut readers: Vec<Box<dyn rev::Rev + Sync + Send>> = Vec::with_capacity(runs.len());
+    for run in runs {
+        let run_base = run.base.to_str().ok_or("bad run path")?;
+        readers.push(rev::open(run_base)?);
     }
+
+    write_temp_delta_rev_with(base, TEMP_ALIGNMULT, max_id, |id, bw| {
+        let mut last: Option<u64> = None;
+        let mut count: u32 = 0;
+        for (run, reader) in runs.iter().zip(readers.iter()) {
+            if id > run.max_id {
+                continue;
+            }
+            if reader.count(id) == 0 {
+                continue;
+            }
+            let mut it = reader.id2poss(id);
+            while let Some(pos) = it.next() {
+                let gap = match last {
+                    None => pos.checked_add(1).ok_or("rev position overflow")?,
+                    Some(prev) => pos.saturating_sub(prev),
+                };
+                if gap == 0 {
+                    return Err("invalid zero gap in rev".into());
+                }
+                bw.delta(gap);
+                last = Some(pos);
+                count = count.checked_add(1).ok_or("rev count overflow")?;
+            }
+        }
+        Ok(count)
+    })
+}
+
+fn remove_temp_run(run: &RunInfo) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::remove_file(add_suffix(&run.base, ".rev"))?;
+    std::fs::remove_file(add_suffix(&run.base, ".rev.idx"))?;
+    std::fs::remove_file(add_suffix(&run.base, ".rev.cnt"))?;
+    let _ = std::fs::remove_file(add_suffix(&run.base, ".rev.cnt64"));
     Ok(())
 }
 
@@ -306,10 +401,10 @@ fn merge_runs_pass(
         let max_id = chunk.iter().map(|r| r.max_id).max().unwrap_or(0);
         let out_base = temp_base(base, *seq);
         *seq += 1;
-        write_rev_from_runs(&out_base, max_id, chunk)?;
+        write_temp_rev_from_runs(&out_base, max_id, chunk)?;
         merged.push(RunInfo { base: out_base, max_id });
         for run in chunk {
-            remove_run(run)?;
+            remove_temp_run(run)?;
         }
     }
     Ok(merged)
@@ -357,7 +452,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let run_base = temp_base(&base, seq);
         seq += 1;
-        write_rev_from_pairs(&run_base, chunk_max_id, &pairs)?;
+        write_temp_rev_from_pairs(&run_base, chunk_max_id, &pairs)?;
         runs.push(RunInfo { base: run_base, max_id: chunk_max_id });
         if chunk_max_id > global_max_id {
             global_max_id = chunk_max_id;
@@ -371,12 +466,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     while runs.len() > 1 {
         runs = merge_runs_pass(&base, &runs, &mut seq)?;
     }
-    if runs[0].max_id < global_max_id {
-        let final_base = temp_base(&base, seq);
-        write_rev_from_runs(&final_base, global_max_id, &runs)?;
-        remove_run(&runs[0])?;
-        runs[0] = RunInfo { base: final_base, max_id: global_max_id };
+
+    let final_base = temp_base(&base, seq);
+    let final_run = RunInfo { base: final_base, max_id: global_max_id };
+    write_rev_from_runs(&final_run.base, global_max_id, &runs)?;
+    for run in &runs {
+        remove_temp_run(run)?;
     }
-    move_run_to_final(&base, &runs[0])?;
+    move_run_to_final(&base, &final_run)?;
     Ok(())
 }
