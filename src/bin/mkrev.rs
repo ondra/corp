@@ -197,6 +197,7 @@ where
         return Err("rev dense idx1 overflow".into());
     }
     idx0.push(idx1_end as u32);
+    idx0.push(max_id.checked_add(1).ok_or("rev dense max id overflow")?);
 
     let mut f = BufWriter::new(File::create(add_suffix(base, ".rev.idx0"))?);
     for off in idx0 {
