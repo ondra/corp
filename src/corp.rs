@@ -254,18 +254,30 @@ impl Corpus {
         rebase_path(&self.name, path)
     }
 
-    pub fn open_attribute<'a, 'b>(&'a self, name: &str) -> Result<Box<dyn Attr + Sync + Send + 'b>, Box<dyn std::error::Error>> 
-    {
-        let path = self.path.clone() + "/" + name;
-
-        let attrconf = if name.contains('.') {
+    fn get_attrconf(&self, name: &str) -> Result<&corpconf::Block, Box<dyn std::error::Error>> {
+        Ok(if name.contains('.') {
             let mut parts = name.split('.');
             let structconf = self.conf.structure(parts.next().unwrap())
                 .ok_or(AttrNotFound{})?;
             structconf.attribute(parts.next().unwrap())
         } else {
             self.conf.attribute(name)
-        }.ok_or(AttrNotFound{})?;
+        }.ok_or(AttrNotFound{})?)
+    }
+
+    pub fn get_text_storage_type<'a>(&'a self, name: &'_ str) -> Result<&'a str, Box<dyn std::error::Error>> {
+        let attrconf = self.get_attrconf(&name)?;
+        Ok(if name.contains('.') {
+            attrconf.value("TYPE").unwrap_or("Int")
+        } else {
+            attrconf.value("TYPE").unwrap_or("MD_MD")
+        })
+    }
+
+    pub fn open_attribute<'a, 'b>(&'a self, name: &str) -> Result<Box<dyn Attr + Sync + Send + 'b>, Box<dyn std::error::Error>>
+    {
+        let path = self.path.clone() + "/" + name;
+        let attrconf = self.get_attrconf(&name)?;
 
         if let Some(_dynamic) = attrconf.value("DYNAMIC") {
             let fromattrname = attrconf.value("FROMATTR").ok_or(AttrNotFound{})?;
@@ -299,17 +311,13 @@ impl Corpus {
                 lex: lex::MapLex::open(&(self.path.clone() + "/" + name))?,
                 text: self.open_text(
                     &(self.path.clone() + "/" + name),
-                    if name.contains('.') {
-                        attrconf.value("TYPE").unwrap_or("Int")
-                    } else {
-                        attrconf.value("TYPE").unwrap_or("MD_MD")
-                    })?,
+                    self.get_text_storage_type(name)?)?,
                 rev: rev::open(&(self.path.clone() + "/" + name))?,
             }))
         }
     }
 
-    fn open_text<'a>(&self, path: &str, typecode: &str)
+    pub fn open_text<'a>(&self, path: &str, typecode: &str)
         -> Result<Box<dyn text::Text + Sync + Send + 'a>, Box<dyn std::error::Error>>
     {
         match typecode {
