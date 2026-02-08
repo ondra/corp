@@ -1,15 +1,13 @@
 use std::env;
-use std::fs::File;
-use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use corp::corp::Corpus;
 use corp::rev;
 use corp::text::{self, Text};
-use corp::wrbits::BitsWriter;
+use corp::writerev_dense;
+use corp::writerev_sparse;
+use corp::writerev_temp;
 
-const REV_MAGIC: [u8; 6] = [0xa3, b'f', b'i', b'n', b'D', b'R'];
-const REV_DENSE_MAGIC: [u8; 6] = [0xa8, b'f', b'i', b'n', b'D', b'R'];
 const USE_DELTA_DENSE_REV: bool = true;
 const CHUNK_BYTES: usize = 32 * 1024 * 1024;
 const MAX_OPEN_RUNS: usize = 32;
@@ -20,206 +18,6 @@ fn add_suffix(base: &Path, suffix: &str) -> std::path::PathBuf {
     let mut s = base.as_os_str().to_os_string();
     s.push(suffix);
     std::path::PathBuf::from(s)
-}
-
-fn pad_to_alignmult(bw: &mut BitsWriter, alignmult: usize) {
-    bw.byte_align();
-    if alignmult <= 1 {
-        return;
-    }
-    let abs_bytes = (REV_MAGIC.len() as u64) + (bw.bits_written() / 8);
-    let rem = (abs_bytes as usize) % alignmult;
-    if rem == 0 {
-        return;
-    }
-    let pad_bytes = alignmult - rem;
-    for _ in 0..pad_bytes {
-        for _ in 0..8 {
-            bw.bit(false);
-        }
-    }
-    bw.byte_align();
-}
-
-fn write_temp_delta_rev_with<F>(
-    base: &Path,
-    alignmult: usize,
-    max_id: u32,
-    mut write_positions: F,
-) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut(u32, &mut BitsWriter) -> Result<u32, Box<dyn std::error::Error>>,
-{
-    if alignmult == 0 {
-        return Err("alignmult must be >= 1".into());
-    }
-
-    let mut revf = BufWriter::new(File::create(add_suffix(base, ".rev"))?);
-    revf.write_all(&REV_MAGIC)?;
-
-    let mut bw = BitsWriter::new(revf);
-    bw.delta((alignmult as u64) + 1);
-
-    let mut idxf = BufWriter::new(File::create(add_suffix(base, ".rev.idx"))?);
-    let mut cntf = BufWriter::new(File::create(add_suffix(base, ".rev.cnt"))?);
-    let _cntf64 = File::create(add_suffix(base, ".rev.cnt64"))?;
-
-    for id in 0..=max_id {
-        pad_to_alignmult(&mut bw, alignmult);
-        let abs_bytes = (REV_MAGIC.len() as u64) + (bw.bits_written() / 8);
-        debug_assert_eq!((abs_bytes as usize) % alignmult, 0);
-        let idx_val = abs_bytes / (alignmult as u64);
-        if idx_val > u32::MAX as u64 {
-            return Err("temp rev idx overflow".into());
-        }
-        idxf.write_all(&(idx_val as u32).to_le_bytes())?;
-        let cnt = write_positions(id, &mut bw)?;
-        cntf.write_all(&cnt.to_le_bytes())?;
-    }
-
-    let mut revf = bw.finish()?;
-    revf.flush()?;
-    idxf.flush()?;
-    cntf.flush()?;
-    Ok(())
-}
-
-fn write_rev_delta_with<F>(
-    base: &Path,
-    max_id: u32,
-    mut write_positions: F,
-) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut(u32, &mut BitsWriter) -> Result<u32, Box<dyn std::error::Error>>,
-{
-    let mut f = BufWriter::new(File::create(add_suffix(base, ".rev"))?);
-    f.write_all(&REV_MAGIC)?;
-    f.flush()?;
-
-    let mut hbw = BitsWriter::new(f);
-    hbw.delta(2);
-    let mut f = hbw.finish()?;
-    let header_end = f.seek(SeekFrom::Current(0))?;
-    f.seek(SeekFrom::Start(header_end))?;
-    let mut bw = BitsWriter::new(f);
-
-    let mut idx = Vec::with_capacity((max_id as usize) + 1);
-    let mut cnts = Vec::with_capacity((max_id as usize) + 1);
-    for id in 0..=max_id {
-        bw.byte_align();
-        let bitpos = bw.bits_written();
-        let byte_off = header_end as u64 + (bitpos / 8);
-        if byte_off > u32::MAX as u64 {
-            return Err("rev offset overflow".into());
-        }
-        idx.push(byte_off as u32);
-        let cnt = write_positions(id, &mut bw)?;
-        cnts.push(cnt);
-    }
-    let _f = bw.finish()?;
-
-    let mut f = BufWriter::new(File::create(add_suffix(base, ".rev.idx"))?);
-    for off in idx {
-        f.write_all(&off.to_le_bytes())?;
-    }
-    f.flush()?;
-
-    let mut f = BufWriter::new(File::create(add_suffix(base, ".rev.cnt"))?);
-    for cnt in cnts {
-        f.write_all(&cnt.to_le_bytes())?;
-    }
-    f.flush()?;
-    Ok(())
-}
-
-fn write_rev_dense_with<F>(
-    base: &Path,
-    max_id: u32,
-    mut write_positions: F,
-) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut(u32, &mut BitsWriter) -> Result<u32, Box<dyn std::error::Error>>,
-{
-    let mut f = BufWriter::new(File::create(add_suffix(base, ".rev"))?);
-    f.write_all(&REV_DENSE_MAGIC)?;
-    f.flush()?;
-    let data_start = f.seek(SeekFrom::Current(0))?;
-    let mut bw = BitsWriter::new(f);
-
-    let mut byte_offsets: Vec<u32> = Vec::with_capacity((max_id as usize) + 1);
-    let mut counts: Vec<u32> = Vec::with_capacity((max_id as usize) + 1);
-    for id in 0..=max_id {
-        bw.byte_align();
-        let bitpos = bw.bits_written();
-        let byte_off = data_start as u64 + (bitpos / 8);
-        if byte_off > u32::MAX as u64 {
-            return Err("rev dense offset overflow".into());
-        }
-        byte_offsets.push(byte_off as u32);
-        let cnt = write_positions(id, &mut bw)?;
-        counts.push(cnt);
-    }
-    let _f = bw.finish()?;
-
-    let mut idx0: Vec<u32> = Vec::new();
-    let idx1 = BufWriter::new(File::create(add_suffix(base, ".rev.idx1"))?);
-    let mut bw1 = BitsWriter::new(idx1);
-    let mut block_start = 0usize;
-    while block_start < byte_offsets.len() {
-        bw1.byte_align();
-        let idx1_byte = bw1.bits_written() / 8;
-        if idx1_byte > u32::MAX as u64 {
-            return Err("rev dense idx1 overflow".into());
-        }
-        idx0.push(idx1_byte as u32);
-
-        let mut last_off: u32 = 0;
-        let end = std::cmp::min(block_start + 64, byte_offsets.len());
-        for i in block_start..end {
-            let off = byte_offsets[i];
-            let delta = off.wrapping_sub(last_off);
-            if delta == 0 {
-                return Err("invalid zero delta in rev dense".into());
-            }
-            bw1.delta(delta as u64);
-            let cnt = counts[i] as u64 + 1;
-            bw1.gamma(cnt);
-            last_off = off;
-        }
-        bw1.delta(1);
-        bw1.gamma(1);
-        block_start += 64;
-    }
-    let mut idx1_file = bw1.finish()?;
-    idx1_file.flush()?;
-    let idx1_end = idx1_file.seek(SeekFrom::Current(0))?;
-    if idx1_end > u32::MAX as u64 {
-        return Err("rev dense idx1 overflow".into());
-    }
-    idx0.push(idx1_end as u32);
-    idx0.push(max_id.checked_add(1).ok_or("rev dense max id overflow")?);
-
-    let mut f = BufWriter::new(File::create(add_suffix(base, ".rev.idx0"))?);
-    for off in idx0 {
-        f.write_all(&off.to_le_bytes())?;
-    }
-    f.flush()?;
-    Ok(())
-}
-
-fn write_rev_with<F>(
-    base: &Path,
-    max_id: u32,
-    write_positions: F,
-) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut(u32, &mut BitsWriter) -> Result<u32, Box<dyn std::error::Error>>,
-{
-    if USE_DELTA_DENSE_REV {
-        write_rev_dense_with(base, max_id, write_positions)
-    } else {
-        write_rev_delta_with(base, max_id, write_positions)
-    }
 }
 
 fn temp_base(base: &Path, seq: u32) -> std::path::PathBuf {
@@ -263,29 +61,19 @@ fn write_temp_rev_from_pairs(
     max_id: u32,
     pairs: &[(u32, u64)],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut pair_idx = 0usize;
-    write_temp_delta_rev_with(base, TEMP_ALIGNMULT, max_id, |id, bw| {
-        let mut last: Option<u64> = None;
-        let mut count: u32 = 0;
-        while pair_idx < pairs.len() && pairs[pair_idx].0 == id {
-            let pos = pairs[pair_idx].1;
-            let gap = match last {
-                None => pos.checked_add(1).ok_or("rev position overflow")?,
-                Some(prev) => pos.saturating_sub(prev),
-            };
-            if gap == 0 {
-                return Err("invalid zero gap in rev".into());
+    let mut writer = writerev_temp::TempRevWriter::create(base, TEMP_ALIGNMULT)?;
+    let mut prev: Option<(u32, u64)> = None;
+    for &(id, pos) in pairs {
+        if let Some((pid, ppos)) = prev {
+            if id < pid || (id == pid && pos <= ppos) {
+                return Err("pairs not sorted by id/position".into());
             }
-            bw.delta(gap);
-            last = Some(pos);
-            count = count.checked_add(1).ok_or("rev count overflow")?;
-            pair_idx += 1;
         }
-        if pair_idx < pairs.len() && pairs[pair_idx].0 < id {
-            return Err("pairs not sorted by id".into());
-        }
-        Ok(count)
-    })
+        writer.put(id, pos)?;
+        prev = Some((id, pos));
+    }
+    writer.fill_to(max_id)?;
+    writer.finish()
 }
 
 fn write_rev_from_runs(
@@ -299,35 +87,33 @@ fn write_rev_from_runs(
         readers.push(rev::open(run_base)?);
     }
 
-    write_rev_with(base, max_id, |id, bw| {
-        let mut last: Option<u64> = None;
-        let mut count: u32 = 0;
-        for (run, reader) in runs.iter().zip(readers.iter()) {
-            if id > run.max_id {
-                continue;
-            }
-            if reader.count(id) == 0 {
-                continue;
-            }
-            let mut it = reader.id2poss(id);
-            while let Some(pos) = it.next() {
-                let gap = match last {
-                    None => pos.checked_add(1).ok_or("rev position overflow")?,
-                    Some(prev) => pos.saturating_sub(prev),
-                };
-                if gap == 0 {
-                    return Err("invalid zero gap in rev".into());
+    if USE_DELTA_DENSE_REV {
+        let mut writer = writerev_dense::DenseRevWriter::create(base)?;
+        for id in 0..=max_id {
+            for (run, reader) in runs.iter().zip(readers.iter()) {
+                if id > run.max_id || reader.count(id) == 0 {
+                    continue;
                 }
-                bw.delta(gap);
-                last = Some(pos);
-                count += 1;
-                if count == u32::MAX {
-                    return Err("rev count overflow".into());
+                for pos in reader.id2poss(id) {
+                    writer.put(id, pos)?;
                 }
             }
         }
-        Ok(count)
-    })
+        writer.finish()
+    } else {
+        let mut writer = writerev_sparse::SparseRevWriter::create(base)?;
+        for id in 0..=max_id {
+            for (run, reader) in runs.iter().zip(readers.iter()) {
+                if id > run.max_id || reader.count(id) == 0 {
+                    continue;
+                }
+                for pos in reader.id2poss(id) {
+                    writer.put(id, pos)?;
+                }
+            }
+        }
+        writer.finish()
+    }
 }
 
 fn write_temp_rev_from_runs(
@@ -341,32 +127,17 @@ fn write_temp_rev_from_runs(
         readers.push(rev::open(run_base)?);
     }
 
-    write_temp_delta_rev_with(base, TEMP_ALIGNMULT, max_id, |id, bw| {
-        let mut last: Option<u64> = None;
-        let mut count: u32 = 0;
+    let mut writer = writerev_temp::TempRevWriter::create(base, TEMP_ALIGNMULT)?;
+    for id in 0..=max_id {
         for (run, reader) in runs.iter().zip(readers.iter()) {
-            if id > run.max_id {
+            if id > run.max_id || reader.count(id) == 0 {
                 continue;
             }
-            if reader.count(id) == 0 {
-                continue;
-            }
-            let mut it = reader.id2poss(id);
-            while let Some(pos) = it.next() {
-                let gap = match last {
-                    None => pos.checked_add(1).ok_or("rev position overflow")?,
-                    Some(prev) => pos.saturating_sub(prev),
-                };
-                if gap == 0 {
-                    return Err("invalid zero gap in rev".into());
-                }
-                bw.delta(gap);
-                last = Some(pos);
-                count = count.checked_add(1).ok_or("rev count overflow")?;
-            }
+            writer.put_batch(id, reader.id2poss(id))?;
         }
-        Ok(count)
-    })
+    }
+    writer.fill_to(max_id)?;
+    writer.finish()
 }
 
 fn remove_temp_run(run: &RunInfo) -> Result<(), Box<dyn std::error::Error>> {

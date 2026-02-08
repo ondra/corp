@@ -6,4 +6,7 @@ pub mod text;
 pub mod bits;
 pub mod wsketch;
 pub mod wrbits;
+pub mod writerev_dense;
+pub mod writerev_sparse;
+pub mod writerev_temp;
 mod util;
