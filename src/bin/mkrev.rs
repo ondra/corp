@@ -9,7 +9,7 @@ use corp::writerev_sparse;
 use corp::writerev_temp;
 
 const USE_DELTA_DENSE_REV: bool = true;
-const CHUNK_BYTES: usize = 32 * 1024 * 1024;
+const CHUNK_BYTES: usize = 1024 * 1024 * 1024;
 const MAX_OPEN_RUNS: usize = 32;
 const TEMP_ALIGNMULT: usize = 1;
 
