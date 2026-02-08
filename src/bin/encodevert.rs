@@ -3,6 +3,7 @@ use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 use chrono::Utc;
 
 use corpconf::Block;
@@ -416,7 +417,6 @@ struct StructWriter {
 }
 
 struct OpenStruct {
-    name: String,
     start: u64,
     attr_values: Vec<String>,
 }
@@ -502,7 +502,8 @@ fn print_usage() {
     println!("Usage:");
     println!("  encodevert <config> [input]");
     println!();
-    println!("If input is omitted or '-', stdin is used.");
+    println!("If input is omitted, VERTICAL from config is used, then stdin.");
+    println!("If VERTICAL starts with '|', it is executed and stdout is used as input.");
 }
 
 fn read_conf(path: &Path) -> Result<Block, Box<dyn std::error::Error>> {
@@ -566,9 +567,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let conf_path = PathBuf::from(args.remove(0));
-    let input = args.get(0).cloned().unwrap_or_else(|| "-".to_string());
 
     let conf = read_conf(&conf_path)?;
+    let mut input_from_conf = false;
+    let mut input = if let Some(cli_input) = args.get(0).cloned() {
+        cli_input
+    } else if let Some(conf_input) = conf.value("VERTICAL") {
+        input_from_conf = true;
+        conf_input.to_string()
+    } else {
+        "-".to_string()
+    };
+    if input_from_conf && input != "-" && !input.starts_with('|') {
+        input = rebase_path(
+            conf_path.to_str().ok_or("bad config path")?,
+            &input,
+        )?;
+    }
     let out_path = conf
         .value("PATH")
         .ok_or("PATH not set in config")?;
@@ -626,7 +641,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let stdin = io::stdin();
-    let mut reader: Box<dyn BufRead> = if input == "-" {
+    let mut command_child: Option<Child> = None;
+    let mut reader: Box<dyn BufRead> = if let Some(cmd) = input.strip_prefix('|') {
+        if cmd.trim().is_empty() {
+            return Err("VERTICAL command is empty".into());
+        }
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .stdout(Stdio::piped())
+            .spawn()?;
+        let stdout = child.stdout.take().ok_or("failed to capture command stdout")?;
+        command_child = Some(child);
+        Box::new(BufReader::new(stdout))
+    } else if input == "-" {
         Box::new(stdin.lock())
     } else {
         Box::new(BufReader::new(File::open(input)?))
@@ -634,11 +662,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut pos: u32 = 0;
     let mut buf = String::new();
-    let mut open_structs: Vec<OpenStruct> = Vec::new();
+    let mut open_structs: HashMap<String, Vec<OpenStruct>> = HashMap::new();
     let mut lineno: u64 = 0;
     let mut err_open_same_str = EncErr::new("structure opened multiple times on same position");
     let mut err_closing_str = EncErr::new("closing non opened structure");
-    let mut err_mismatch_str = EncErr::new("mismatched closing structure");
     let mut err_unterminated = EncErr::new("unterminated structure tags");
 
     loop {
@@ -705,7 +732,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     sb.pending_empty_pos = None;
                                     sb.pending_empty_vals = None;
                                 }
-                                open_structs.push(OpenStruct { name, start: pos as u64, attr_values });
+                                open_structs
+                                    .entry(name)
+                                    .or_default()
+                                    .push(OpenStruct { start: pos as u64, attr_values });
                                 handled_tag = true;
                             }
                         }
@@ -720,26 +750,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         }
-                            let open = match open_structs.pop() {
+                            let open = match open_structs.get_mut(&name).and_then(|opens| opens.pop()) {
                                 Some(v) => v,
                                 None => {
                                     err_closing_str.emit(
                                         lineno,
                                         &format!("closing non opened structure ({})", name),
                                     );
-                                    // keep stack as-is
-                                    // and ignore this end tag
                                     continue;
                                 }
                             };
-                            if open.name != name {
-                                err_mismatch_str.emit(
-                                    lineno,
-                                    &format!("mismatched closing structure ({})", name),
-                                );
-                                open_structs.push(open);
-                                handled_tag = true;
-                            } else {
                             let sb = structs.get_mut(&name).unwrap();
                             if let Some(pend_pos) = sb.pending_empty_pos {
                                 if pend_pos != pos as u64 {
@@ -762,7 +782,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 attr.push_value(id, struct_pos)?;
                             }
                             handled_tag = true;
-                        }
                     }
                 }
             }
@@ -784,10 +803,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pos += 1;
     }
 
-    if !open_structs.is_empty() {
+    let unterminated: usize = open_structs.values().map(std::vec::Vec::len).sum();
+    if unterminated != 0 {
         err_unterminated.emit(
             lineno,
-            &format!("{} unterminated structure tags ignored", open_structs.len()),
+            &format!("{} unterminated structure tags ignored", unterminated),
         );
     }
     flush_all_pending_at_pos(&mut structs, pos as u64)?;
@@ -806,8 +826,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     err_open_same_str.summary();
     err_closing_str.summary();
-    err_mismatch_str.summary();
     err_unterminated.summary();
+
+    if let Some(mut child) = command_child {
+        let status = child.wait()?;
+        if !status.success() {
+            return Err(format!("VERTICAL command exited with status {}", status).into());
+        }
+    }
 
     Ok(())
 }
