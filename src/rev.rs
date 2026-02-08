@@ -27,6 +27,10 @@ impl Iterator for RevIter<'_> {
     }
 }
 
+impl ExactSizeIterator for RevIter<'_> {
+    fn len(&self) -> usize { self.di.remaining as usize }
+}
+
 impl fmt::Display for BadRevHeader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "BadRevHeader({})", self.path)
