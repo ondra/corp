@@ -9,4 +9,5 @@ pub mod wrbits;
 pub mod writerev_dense;
 pub mod writerev_sparse;
 pub mod writerev_temp;
+pub mod virtual_corp;
 mod util;

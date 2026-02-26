@@ -2,10 +2,13 @@ use fs_err::File;
 use std::io::Read;
 use std::fmt;
 
+use std::sync::Arc;
+
 use crate::lex;
 use crate::text;
 use crate::rev;
 use crate::structure;
+use crate::virtual_corp;
 
 use crate::text::Text;
 
@@ -187,6 +190,8 @@ pub struct Corpus {
     pub path: String,
     pub name: String,
     pub conf: corpconf::Block,
+    pub segments: Option<Vec<Corpus>>,
+    pub layout: Option<Arc<virtual_corp::SegmentLayout>>,
 }
 
 #[derive(Debug)]
@@ -247,7 +252,27 @@ impl Corpus {
         let conf = corpconf::parse_conf_opt(&buf)?;
         let path = rebase_path(&conf_filename, conf.value("PATH").ok_or(AttrNotFound{})?)?;
         let path = path.trim_end_matches('/').to_string() + "/";
-        Ok(Corpus{ path, name: conf_filename, conf })
+
+        let (segments, layout) = if let Some(virtdef_path) = conf.value("VIRTUAL") {
+            let virtdef_path = rebase_path(&conf_filename, virtdef_path)?;
+            let seg_names = virtual_corp::parse_virtdef(&virtdef_path)?;
+            let mut seg_corpora = Vec::with_capacity(seg_names.len());
+            let mut seg_sizes = Vec::with_capacity(seg_names.len());
+            for name in &seg_names {
+                let seg = Corpus::open(name)?;
+                // Get text size from the default attribute
+                let default_attr = seg.get_conf("DEFAULTATTR").unwrap_or("word".to_string());
+                let seg_attr = seg.open_attribute(&default_attr)?;
+                seg_sizes.push(seg_attr.text().size() as u64);
+                seg_corpora.push(seg);
+            }
+            let layout = Arc::new(virtual_corp::SegmentLayout::new(&seg_sizes));
+            (Some(seg_corpora), Some(layout))
+        } else {
+            (None, None)
+        };
+
+        Ok(Corpus{ path, name: conf_filename, conf, segments, layout })
     }
 
     pub fn rebase_path(&self, path: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -276,6 +301,15 @@ impl Corpus {
 
     pub fn open_attribute<'a, 'b>(&'a self, name: &str) -> Result<Box<dyn Attr + Sync + Send + 'b>, Box<dyn std::error::Error>>
     {
+        if let (Some(segments), Some(layout)) = (&self.segments, &self.layout) {
+            return Ok(Box::new(virtual_corp::VirtualAttr::open(
+                self.path.trim_end_matches('/'),
+                name,
+                layout.clone(),
+                segments,
+            )?));
+        }
+
         let path = self.path.clone() + "/" + name;
         let attrconf = self.get_attrconf(&name)?;
 
@@ -334,6 +368,14 @@ impl Corpus {
     pub fn open_struct<'a>(&self, name: &str)
         -> Result<Box<dyn structure::Struct + Sync + Send + 'a>, Box<dyn std::error::Error>>
     {
+        if let (Some(segments), Some(layout)) = (&self.segments, &self.layout) {
+            return Ok(Box::new(virtual_corp::VirtualStruct::open(
+                layout.clone(),
+                segments,
+                name,
+            )?));
+        }
+
         let s = self.conf.structure(name).ok_or(AttrNotFound{})?;
         let type64 = matches!(s.value("TYPE"), Some("file64") | Some("map64"));
         structure::open(
