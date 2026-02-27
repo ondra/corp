@@ -11,4 +11,5 @@ pub mod writerev_sparse;
 pub mod writerev_temp;
 pub mod virtual_corp;
 pub mod reservoir_sampling;
+pub mod subcorp;
 mod util;

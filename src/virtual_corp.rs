@@ -351,7 +351,7 @@ impl Attr for VirtualAttr {
     fn revidx(&self) -> &dyn rev::Rev { &self.vrev }
     fn text(&self) -> &dyn text::Text { self }
 
-    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + '_>, Box<dyn std::error::Error>> {
+    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
         match t {
             "frq" => Ok(Box::new(VirtualFrequency { vrev: &self.vrev })),
             _ => Err(format!("unsupported frequency type for virtual attr: {}", t).into()),

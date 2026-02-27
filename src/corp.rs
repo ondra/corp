@@ -24,7 +24,7 @@ pub struct StdAttr {
     pub rev: Box<dyn rev::Rev + Sync + Send>,
 }
 
-fn open_freq(base: &str, kind: &str) -> Result<Box<dyn Frequency>, Box<dyn std::error::Error>> {
+pub fn open_freq(base: &str, kind: &str) -> Result<Box<dyn Frequency + Send + Sync>, Box<dyn std::error::Error>> {
     if kind.contains(":") {
         let mut parts = kind.split(":");
         let ext = parts.next().ok_or(format!("bad frequency kind: {}", kind))?;
@@ -88,7 +88,7 @@ pub trait Attr: std::fmt::Debug + Frequency + Sync + Send {
     fn revidx(&self) -> &dyn rev::Rev;
     fn text(&self) -> &dyn text::Text;
     fn id_range(&self) -> u32;
-    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + '_>, Box<dyn std::error::Error>>;
+    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>>;
 }
 
 impl Attr for StdAttr {
@@ -102,7 +102,7 @@ impl Attr for StdAttr {
     fn revidx(&self) -> &dyn rev::Rev { self.rev.as_ref() }
     fn text(&self) -> &dyn text::Text { self.text.as_ref() }
     fn id_range(&self) -> u32 { self.lex.id_range() }
-    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + '_>, Box<dyn std::error::Error>> {
+    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
         match t {
             "frq" => Ok(Box::new(RevFrequency { a: &self })),
             _ => open_freq(&self.path, t),
@@ -135,7 +135,7 @@ impl Attr for DynAttr {
     fn revidx(&self) -> &dyn rev::Rev { self.fromattr.revidx() }
     fn text(&self) -> &dyn text::Text { return self }
     fn id_range(&self) -> u32 { self.lex.id_range() }
-    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + '_>, Box<dyn std::error::Error>> {
+    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
         match t {
             "frq" => Ok(Box::new(DynFrequency{ da: &self })),
             _ => open_freq(&self.path, t),
@@ -414,5 +414,23 @@ impl Corpus {
                 _ => val,
             }
         })
+    }
+}
+
+pub trait CorpusLike {
+    fn open_attribute(&self, name: &str) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>>;
+    fn open_struct(&self, name: &str) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>>;
+    fn get_conf(&self, name: &str) -> Option<String>;
+}
+
+impl CorpusLike for Corpus {
+    fn open_attribute(&self, name: &str) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>> {
+        Corpus::open_attribute(self, name)
+    }
+    fn open_struct(&self, name: &str) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>> {
+        Corpus::open_struct(self, name)
+    }
+    fn get_conf(&self, name: &str) -> Option<String> {
+        Corpus::get_conf(self, name)
     }
 }
