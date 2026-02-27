@@ -9,5 +9,7 @@ memmap = "0.6.2"
 fs-err = "2.11.0"
 chrono = "0.4"
 git-version = "0.3"
+rand = { version = "0.8", features = ["small_rng"] }
+rand_distr = "0.4"
 
 [lib]

@@ -10,4 +10,5 @@ pub mod writerev_dense;
 pub mod writerev_sparse;
 pub mod writerev_temp;
 pub mod virtual_corp;
+pub mod reservoir_sampling;
 mod util;
