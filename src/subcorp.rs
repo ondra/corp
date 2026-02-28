@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use fs_err::File;
 use memmap::MmapOptions;
 
@@ -106,7 +104,7 @@ impl std::fmt::Debug for Ranges {
 #[derive(Debug)]
 pub struct SubCorpus {
     pub corpus: Corpus,
-    pub ranges: Arc<Ranges>,
+    pub ranges: Ranges,
     subcorp_base: String,
 }
 
@@ -121,7 +119,7 @@ impl SubCorpus {
 
     /// Layer subcorpus over an already-opened corpus.
     pub fn from_corpus(corpus: Corpus, subcpath: &str) -> Result<SubCorpus, Box<dyn std::error::Error>> {
-        let ranges = Arc::new(Ranges::open(subcpath)?);
+        let ranges = Ranges::open(subcpath)?;
         // Strip literal "subc" suffix from path to get freq base
         let subcorp_base = subcpath.strip_suffix("subc")
             .unwrap_or(subcpath)
@@ -129,7 +127,7 @@ impl SubCorpus {
         Ok(SubCorpus { corpus, ranges, subcorp_base })
     }
 
-    pub fn ranges(&self) -> &Arc<Ranges> {
+    pub fn ranges(&self) -> &Ranges {
         &self.ranges
     }
 }
@@ -140,7 +138,7 @@ impl CorpusLike for SubCorpus {
         let freq_base = self.subcorp_base.clone() + name;
         Ok(Box::new(SubCorpAttr {
             inner,
-            ranges: self.ranges.clone(),
+            ranges: &self.ranges,
             freq_base,
         }))
     }
@@ -158,7 +156,7 @@ impl CorpusLike for SubCorpus {
 
 struct SubCorpAttr<'a> {
     inner: Box<dyn Attr + Sync + Send + 'a>,
-    ranges: Arc<Ranges>,
+    ranges: &'a Ranges,
     freq_base: String,
 }
 
@@ -204,7 +202,7 @@ impl rev::Rev for SubCorpAttr<'_> {
         self.id2poss(id).count() as u64
     }
 
-    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + '_> {
+    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + Sync + '_> {
         let inner_poss = self.inner.revidx().id2poss(id);
         Box::new(FilteredRevIter {
             inner: inner_poss,
@@ -284,7 +282,7 @@ impl Iterator for SubCorpIdIter<'_> {
 
 /// Lazy merge-intersect of inner position iterator with ranges.
 struct FilteredRevIter<'a> {
-    inner: Box<dyn Iterator<Item=u64> + Send + 'a>,
+    inner: Box<dyn Iterator<Item=u64> + Send + Sync + 'a>,
     pairs: &'a [(u64, u64)],
     ri: usize,
 }

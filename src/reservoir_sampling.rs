@@ -1,6 +1,5 @@
 use rand::Rng;
 use rand::prelude::SmallRng;
-use rand::SeedableRng;
 use rand_distr::Beta;
 use rand_distr::Binomial;
 use rand_distr::Distribution;
@@ -192,11 +191,11 @@ impl<'a> Id2PossSampler<'a> {
         }
     }
 
-    pub fn id2poss_with_rng<'b, R: Rng>(
+    pub fn id2poss_with_rng<'b, R: Rng + Send + Sync>(
         &'b self,
         id: u32,
         rng: &'b mut R,
-    ) -> Box<dyn Iterator<Item=u64> + 'b> {
+    ) -> Box<dyn Iterator<Item=u64> + Send + Sync + 'b> {
         match (self.nsamples, &self.frq) {
             (Some(nsamples), Some(frq)) => {
                 let cnt = frq.frq(id) as usize;

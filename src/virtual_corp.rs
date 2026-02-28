@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::io::Read;
 use fs_err::File;
 use memmap::MmapOptions;
@@ -145,13 +144,13 @@ fn oid_lookup(mmap: &memmap::Mmap, unified_id: u32) -> u32 {
 }
 
 #[derive(Debug)]
-pub struct VirtualRev {
-    layout: Arc<SegmentLayout>,
+pub struct VirtualRev<'a> {
+    layout: &'a SegmentLayout,
     seg_revs: Vec<Box<dyn rev::Rev + Sync + Send>>,
     oid: Vec<memmap::Mmap>,
 }
 
-impl rev::Rev for VirtualRev {
+impl rev::Rev for VirtualRev<'_> {
     fn count(&self, id: u32) -> u64 {
         let mut total = 0u64;
         for (i, seg_rev) in self.seg_revs.iter().enumerate() {
@@ -163,21 +162,21 @@ impl rev::Rev for VirtualRev {
         total
     }
 
-    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + '_> {
+    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + Sync + '_> {
         Box::new(VirtualRevIter::new(self, id))
     }
 }
 
-struct VirtualRevIter<'a> {
-    rev: &'a VirtualRev,
+struct VirtualRevIter<'iter, 'layout> {
+    rev: &'iter VirtualRev<'layout>,
     id: u32,
     seg_idx: usize,
     cur_offset: u64,
-    cur_iter: Option<Box<dyn Iterator<Item=u64> + Send + 'a>>,
+    cur_iter: Option<Box<dyn Iterator<Item=u64> + Send + Sync + 'iter>>,
 }
 
-impl<'a> VirtualRevIter<'a> {
-    fn new(rev: &'a VirtualRev, id: u32) -> Self {
+impl<'iter, 'layout> VirtualRevIter<'iter, 'layout> {
+    fn new(rev: &'iter VirtualRev<'layout>, id: u32) -> Self {
         Self {
             rev,
             id,
@@ -188,7 +187,7 @@ impl<'a> VirtualRevIter<'a> {
     }
 }
 
-impl Iterator for VirtualRevIter<'_> {
+impl Iterator for VirtualRevIter<'_, '_> {
     type Item = u64;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -215,23 +214,23 @@ impl Iterator for VirtualRevIter<'_> {
 }
 
 #[derive(Debug)]
-pub struct VirtualAttr {
+pub struct VirtualAttr<'a> {
     pub path: String,
     pub name: String,
-    layout: Arc<SegmentLayout>,
-    segments: Vec<Box<dyn Attr + Sync + Send>>,
+    layout: &'a SegmentLayout,
+    segments: Vec<Box<dyn Attr + Sync + Send + 'a>>,
     lex: lex::MapLex,
     nid: Vec<memmap::Mmap>,
-    vrev: VirtualRev,
+    vrev: VirtualRev<'a>,
 }
 
-impl VirtualAttr {
+impl<'a> VirtualAttr<'a> {
     pub fn open(
         virt_path: &str,
         attr_name: &str,
-        layout: Arc<SegmentLayout>,
-        segment_corpora: &[Corpus],
-    ) -> Result<VirtualAttr, Box<dyn std::error::Error>> {
+        layout: &'a SegmentLayout,
+        segment_corpora: &'a [Corpus],
+    ) -> Result<VirtualAttr<'a>, Box<dyn std::error::Error>> {
         let base = virt_path.to_string() + "/" + attr_name;
         let nseg = segment_corpora.len();
 
@@ -251,7 +250,7 @@ impl VirtualAttr {
         let lex = lex::MapLex::open(&base)?;
 
         let vrev = VirtualRev {
-            layout: layout.clone(),
+            layout,
             seg_revs,
             oid: rev_oid_maps,
         };
@@ -271,7 +270,7 @@ impl VirtualAttr {
 // Iterator that chains across segments, translating IDs via nid
 struct VirtualIdIter<'a> {
     layout: &'a SegmentLayout,
-    segments: &'a [Box<dyn Attr + Sync + Send>],
+    segments: &'a [Box<dyn Attr + Sync + Send + 'a>],
     nid: &'a [memmap::Mmap],
     cur_seg: usize,
     cur_iter: Box<dyn Iterator<Item=u32> + 'a>,
@@ -281,7 +280,7 @@ struct VirtualIdIter<'a> {
 impl<'a> VirtualIdIter<'a> {
     fn new(
         layout: &'a SegmentLayout,
-        segments: &'a [Box<dyn Attr + Sync + Send>],
+        segments: &'a [Box<dyn Attr + Sync + Send + 'a>],
         nid: &'a [memmap::Mmap],
         frompos: u64,
     ) -> Self {
@@ -326,7 +325,7 @@ impl Iterator for VirtualIdIter<'_> {
     }
 }
 
-impl text::Text for VirtualAttr {
+impl text::Text for VirtualAttr<'_> {
     fn posat(&self, _pos: u64) -> Option<text::DeltaIter<'_>> { None }
     fn structat(&self, _pos: u64) -> Option<text::IntIter<'_>> { None }
     fn size(&self) -> usize { self.layout.total_size() as usize }
@@ -337,7 +336,7 @@ impl text::Text for VirtualAttr {
     }
 }
 
-impl Attr for VirtualAttr {
+impl Attr for VirtualAttr<'_> {
     fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_> {
         Box::new(VirtualIdIter::new(&self.layout, &self.segments, &self.nid, frompos))
     }
@@ -380,19 +379,19 @@ impl Frequency for VirtualFrequency<'_> {
 }
 
 #[derive(Debug)]
-pub struct VirtualStruct {
-    corp_layout: Arc<SegmentLayout>,
+pub struct VirtualStruct<'a> {
+    corp_layout: &'a SegmentLayout,
     struct_layout: StructLayout,
-    segments: Vec<Box<dyn structure::Struct + Sync + Send>>,
+    segments: Vec<Box<dyn structure::Struct + Sync + Send + 'a>>,
 }
 
-impl VirtualStruct {
+impl<'a> VirtualStruct<'a> {
     pub fn open(
-        corp_layout: Arc<SegmentLayout>,
-        segment_corpora: &[Corpus],
+        corp_layout: &'a SegmentLayout,
+        segment_corpora: &'a [Corpus],
         struct_name: &str,
-    ) -> Result<VirtualStruct, Box<dyn std::error::Error>> {
-        let mut segments: Vec<Box<dyn structure::Struct + Sync + Send>> = Vec::new();
+    ) -> Result<VirtualStruct<'a>, Box<dyn std::error::Error>> {
+        let mut segments: Vec<Box<dyn structure::Struct + Sync + Send + 'a>> = Vec::new();
         let mut counts = Vec::new();
 
         for corp in segment_corpora {
@@ -409,7 +408,7 @@ impl VirtualStruct {
     }
 }
 
-impl structure::Struct for VirtualStruct {
+impl structure::Struct for VirtualStruct<'_> {
     fn beg_at(&self, pos: u64) -> u64 {
         let (seg, local) = self.struct_layout.locate(pos);
         self.segments[seg].beg_at(local) + self.corp_layout.offset(seg)

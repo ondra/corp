@@ -2,8 +2,6 @@ use fs_err::File;
 use std::io::Read;
 use std::fmt;
 
-use std::sync::Arc;
-
 use crate::lex;
 use crate::text;
 use crate::rev;
@@ -69,13 +67,12 @@ impl <T> Frequency for FromFile<T> where T: Copy, u64: From<T> {
 }
 
 #[derive(Debug)]
-pub struct DynAttr {
-//pub struct DynAttr<'a, 'b> {
+pub struct DynAttr<'a> {
     pub path: String,
     pub name: String,
     pub conf: corpconf::Block,
     pub lex: lex::MapLex,
-    pub fromattr: Box<dyn Attr + Sync + Send>,
+    pub fromattr: Box<dyn Attr + Sync + Send + 'a>,
     ridx: memmap::Mmap,
 
     // frqm: memmap::Mmap,
@@ -120,12 +117,12 @@ impl Attr for StdAttr {
     }
 }
 
-struct DynIter<'a> {
-    di: Box<dyn Iterator<Item=u32> + 'a>,
-    da: &'a DynAttr,
+struct DynIter<'iter, 'attr> {
+    di: Box<dyn Iterator<Item=u32> + 'iter>,
+    da: &'iter DynAttr<'attr>,
 }
 
-impl Iterator for DynIter<'_> {
+impl Iterator for DynIter<'_, '_> {
     type Item = u32;
     fn next(&mut self) -> Option<u32> {
         if let Some(orgid) = self.di.next() {
@@ -134,10 +131,10 @@ impl Iterator for DynIter<'_> {
     }
 }
 
-impl Attr for DynAttr {
+impl Attr for DynAttr<'_> {
     fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_> {
         let it = self.fromattr.iter_ids(frompos);
-        Box::new(DynIter {di: it, da: self})
+        Box::new(DynIter { di: it, da: self })
         //Box::new(vec![1u32, 2, 3].into_iter())
     }
     fn id2str(&self, id: u32) -> &str { self.lex.id2str(id) }
@@ -156,7 +153,7 @@ impl Attr for DynAttr {
     }
 }
 
-impl Text for DynAttr {
+impl Text for DynAttr<'_> {
     fn posat(&self, _pos: u64) -> Option<text::DeltaIter<'_>> { panic!() }
     fn structat(&self, _pos: u64) -> Option<text::IntIter<'_>> { panic!() }
     fn size(&self) -> usize { self.fromattr.text().size() }
@@ -167,11 +164,11 @@ pub trait Frequency {
     fn frq(&self, id: u32) -> u64;
 }
 
-struct DynFrequency<'a> {
-    da: &'a DynAttr,
-    base_freq: Box<dyn Frequency + Send + Sync + 'a>,
+struct DynFrequency<'iter, 'attr> {
+    da: &'iter DynAttr<'attr>,
+    base_freq: Box<dyn Frequency + Send + Sync + 'iter>,
 }
-impl Frequency for DynFrequency<'_> {
+impl Frequency for DynFrequency<'_, '_> {
     fn frq(&self, id: u32) -> u64 {
         let mut tot = 0u64;
         for oid in self.da.lrev.id2poss(id) {
@@ -192,7 +189,7 @@ pub struct Corpus {
     pub name: String,
     pub conf: corpconf::Block,
     pub segments: Option<Vec<Corpus>>,
-    pub layout: Option<Arc<virtual_corp::SegmentLayout>>,
+    pub layout: Option<virtual_corp::SegmentLayout>,
 }
 
 #[derive(Debug)]
@@ -263,11 +260,14 @@ impl Corpus {
                 let seg = Corpus::open(name)?;
                 // Get text size from the default attribute
                 let default_attr = seg.get_conf("DEFAULTATTR").unwrap_or("word".to_string());
-                let seg_attr = seg.open_attribute(&default_attr)?;
-                seg_sizes.push(seg_attr.text().size() as u64);
+                let seg_size = {
+                    let seg_attr = seg.open_attribute(&default_attr)?;
+                    seg_attr.text().size() as u64
+                };
+                seg_sizes.push(seg_size);
                 seg_corpora.push(seg);
             }
-            let layout = Arc::new(virtual_corp::SegmentLayout::new(&seg_sizes));
+            let layout = virtual_corp::SegmentLayout::new(&seg_sizes);
             (Some(seg_corpora), Some(layout))
         } else {
             (None, None)
@@ -300,13 +300,13 @@ impl Corpus {
         })
     }
 
-    pub fn open_attribute<'a, 'b>(&'a self, name: &str) -> Result<Box<dyn Attr + Sync + Send + 'b>, Box<dyn std::error::Error>>
+    pub fn open_attribute<'a>(&'a self, name: &str) -> Result<Box<dyn Attr + Sync + Send + 'a>, Box<dyn std::error::Error>>
     {
         if let (Some(segments), Some(layout)) = (&self.segments, &self.layout) {
             return Ok(Box::new(virtual_corp::VirtualAttr::open(
                 self.path.trim_end_matches('/'),
                 name,
-                layout.clone(),
+                layout,
                 segments,
             )?));
         }
@@ -366,12 +366,12 @@ impl Corpus {
         }
     }
 
-    pub fn open_struct<'a>(&self, name: &str)
+    pub fn open_struct<'a>(&'a self, name: &str)
         -> Result<Box<dyn structure::Struct + Sync + Send + 'a>, Box<dyn std::error::Error>>
     {
         if let (Some(segments), Some(layout)) = (&self.segments, &self.layout) {
             return Ok(Box::new(virtual_corp::VirtualStruct::open(
-                layout.clone(),
+                layout,
                 segments,
                 name,
             )?));
