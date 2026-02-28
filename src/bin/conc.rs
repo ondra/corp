@@ -242,17 +242,10 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = StdRng::seed_from_u64(666);
     let limit = args.limit.unwrap_or(usize::MAX);
 
-    if let Some(n) = args.sample {
-        let poss_sampler = qa.id2poss_sampler(n);
-        for pos in poss_sampler.id2poss_with_rng(id, &mut rng).take(limit) {
-            let line = format_line(display_attr.as_ref(), pos, args.window, args.tab, glue_ref, corpus_size);
-            println!("{pos}\t{line}");
-        }
-    } else {
-        for pos in qa.revidx().id2poss(id).take(limit) {
-            let line = format_line(display_attr.as_ref(), pos, args.window, args.tab, glue_ref, corpus_size);
-            println!("{pos}\t{line}");
-        }
+    let poss_sampler = qa.id2poss_sampler(args.sample);
+    for pos in poss_sampler.id2poss_with_rng(id, &mut rng).take(limit) {
+        let line = format_line(display_attr.as_ref(), pos, args.window, args.tab, glue_ref, corpus_size);
+        println!("{pos}\t{line}");
     }
 
     Ok(())

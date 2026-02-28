@@ -179,12 +179,12 @@ where
 
 pub struct Id2PossSampler<'a> {
     attr: &'a dyn Attr,
-    nsamples: usize,
+    nsamples: Option<usize>,
     frq: Option<Box<dyn Frequency + Send + Sync + 'a>>,
 }
 
 impl<'a> Id2PossSampler<'a> {
-    pub fn new(attr: &'a dyn Attr, nsamples: usize) -> Self {
+    pub fn new(attr: &'a dyn Attr, nsamples: Option<usize>) -> Self {
         Self {
             attr,
             nsamples,
@@ -197,22 +197,23 @@ impl<'a> Id2PossSampler<'a> {
         id: u32,
         rng: &'b mut R,
     ) -> Box<dyn Iterator<Item=u64> + 'b> {
-        match &self.frq {
-            Some(frq) => {
+        match (self.nsamples, &self.frq) {
+            (Some(nsamples), Some(frq)) => {
                 let cnt = frq.frq(id) as usize;
-                if cnt > self.nsamples {
+                if cnt > nsamples {
                     let poss = self.attr.revidx().id2poss(id);
-                    Box::new(Sampler::from_count(poss, cnt, self.nsamples, rng))
+                    Box::new(Sampler::from_count(poss, cnt, nsamples, rng))
                 } else {
                     self.attr.revidx().id2poss(id)
                 }
             },
-            None => {
+            (Some(nsamples), None) => {
                 let poss = self.attr.revidx().id2poss(id);
-                let mut sampled = sample_online(poss, self.nsamples, rng);
+                let mut sampled = sample_online(poss, nsamples, rng);
                 sampled.sort_unstable();
                 Box::new(sampled.into_iter())
-            }
+            },
+            (None, _) => self.attr.revidx().id2poss(id)
         }
     }
 }

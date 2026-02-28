@@ -95,7 +95,7 @@ pub trait Attr: std::fmt::Debug + Sync + Send {
 impl dyn Attr + Send + Sync + '_ {
     pub fn id2poss_sampler<'a>(
         &'a self,
-        nsamples: usize,
+        nsamples: Option<usize>,
     ) -> Id2PossSampler<'a> {
         Id2PossSampler::new(self, nsamples)
     }
