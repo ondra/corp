@@ -1,9 +1,11 @@
 use rand::Rng;
 use rand::prelude::SmallRng;
+use rand::SeedableRng;
 use rand_distr::Beta;
 use rand_distr::Binomial;
 use rand_distr::Distribution;
 use rand_distr::Uniform;
+use crate::corp::{Attr, Frequency};
 
 pub struct ReservoirSampler<'a, E> {
     rng: &'a mut SmallRng,
@@ -80,11 +82,10 @@ where
 
 impl<I, R: Rng> Sampler<'_, I, R>
 where
-    I: ExactSizeIterator,
+    I: Iterator,
 {
-    fn from_iter(it: I, k: usize, rng: &'_ mut R) -> Sampler<'_, I, R> {
-        let n = it.len() as isize;
-        Sampler { it, n, k, rng }
+    pub fn from_count(it: I, count: usize, k: usize, rng: &'_ mut R) -> Sampler<'_, I, R> {
+        Sampler { it, n: count as isize, k, rng }
     }
 }
 
@@ -145,54 +146,17 @@ where
 
 pub trait SamplerExt<'a, T, R: Rng>: ExactSizeIterator<Item = T> + Sized {
     fn sample(self, k: usize, rng: &'a mut R) -> Sampler<'a, Self, R> {
-        Sampler::from_iter(self, k, rng)
+        let count = self.len();
+        Sampler::from_count(self, count, k, rng)
     }
 }
 
 impl<T, I: ExactSizeIterator<Item = T>, R: Rng> SamplerExt<'_, T, R> for I {}
 
-pub struct KnownLen<I> {
-    it: I,
-    remaining: usize,
-}
-
-pub fn known_len<I>(it: I, len: usize) -> KnownLen<I>
-where
-    I: Iterator,
-{
-    KnownLen { it, remaining: len }
-}
-
-impl<I> Iterator for KnownLen<I>
-where
-    I: Iterator,
-{
-    type Item = I::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let item = self.it.next()?;
-        if self.remaining > 0 {
-            self.remaining -= 1;
-        }
-        Some(item)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
-    }
-}
-
-impl<I> ExactSizeIterator for KnownLen<I>
-where
-    I: Iterator,
-{
-    fn len(&self) -> usize { self.remaining }
-}
-
 pub fn sample_online<I, T, R>(it: I, k: usize, rng: &mut R) -> Vec<T>
 where
     I: Iterator<Item = T>,
-    R: Rng,
+    R: Rng + ?Sized,
 {
     if k == 0 {
         return Vec::new();
@@ -212,3 +176,44 @@ where
     }
     sample
 }
+
+pub struct Id2PossSampler<'a> {
+    attr: &'a dyn Attr,
+    nsamples: usize,
+    frq: Option<Box<dyn Frequency + Send + Sync + 'a>>,
+}
+
+impl<'a> Id2PossSampler<'a> {
+    pub fn new(attr: &'a dyn Attr, nsamples: usize) -> Self {
+        Self {
+            attr,
+            nsamples,
+            frq: attr.get_freq("frq").ok(),
+        }
+    }
+
+    pub fn id2poss_with_rng<'b, R: Rng>(
+        &'b self,
+        id: u32,
+        rng: &'b mut R,
+    ) -> Box<dyn Iterator<Item=u64> + 'b> {
+        match &self.frq {
+            Some(frq) => {
+                let cnt = frq.frq(id) as usize;
+                if cnt > self.nsamples {
+                    let poss = self.attr.revidx().id2poss(id);
+                    Box::new(Sampler::from_count(poss, cnt, self.nsamples, rng))
+                } else {
+                    self.attr.revidx().id2poss(id)
+                }
+            },
+            None => {
+                let poss = self.attr.revidx().id2poss(id);
+                let mut sampled = sample_online(poss, self.nsamples, rng);
+                sampled.sort_unstable();
+                Box::new(sampled.into_iter())
+            }
+        }
+    }
+}
+

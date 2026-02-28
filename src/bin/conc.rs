@@ -1,5 +1,4 @@
 use corp::corp::{Attr, Corpus};
-use corp::reservoir_sampling::{SamplerExt, known_len, sample_online};
 use corp::structure::Struct;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -244,19 +243,8 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let limit = args.limit.unwrap_or(usize::MAX);
 
     if let Some(n) = args.sample {
-        let poss = qa.revidx().id2poss(id);
-        let mut sample = if let Ok(freq) = qa.get_freq("frq") {
-            let total = freq.frq(id);
-            if let Ok(total_len) = usize::try_from(total) {
-                known_len(poss, total_len).sample(n, &mut rng).collect()
-            } else {
-                sample_online(poss, n, &mut rng)
-            }
-        } else {
-            sample_online(poss, n, &mut rng)
-        };
-        sample.sort_unstable();
-        for pos in sample.into_iter().take(limit) {
+        let poss_sampler = qa.id2poss_sampler(n);
+        for pos in poss_sampler.id2poss_with_rng(id, &mut rng).take(limit) {
             let line = format_line(display_attr.as_ref(), pos, args.window, args.tab, glue_ref, corpus_size);
             println!("{pos}\t{line}");
         }

@@ -12,6 +12,8 @@ use crate::virtual_corp;
 
 use crate::text::Text;
 
+use crate::reservoir_sampling::Id2PossSampler;
+
 use crate::util::as_slice_ref;
 
 #[derive(Debug)]
@@ -88,6 +90,15 @@ pub trait Attr: std::fmt::Debug + Sync + Send {
     fn text(&self) -> &dyn text::Text;
     fn id_range(&self) -> u32;
     fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>>;
+}
+
+impl dyn Attr + Send + Sync + '_ {
+    pub fn id2poss_sampler<'a>(
+        &'a self,
+        nsamples: usize,
+    ) -> Id2PossSampler<'a> {
+        Id2PossSampler::new(self, nsamples)
+    }
 }
 
 impl Attr for StdAttr {
