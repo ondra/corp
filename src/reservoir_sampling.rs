@@ -150,3 +150,65 @@ pub trait SamplerExt<'a, T, R: Rng>: ExactSizeIterator<Item = T> + Sized {
 }
 
 impl<T, I: ExactSizeIterator<Item = T>, R: Rng> SamplerExt<'_, T, R> for I {}
+
+pub struct KnownLen<I> {
+    it: I,
+    remaining: usize,
+}
+
+pub fn known_len<I>(it: I, len: usize) -> KnownLen<I>
+where
+    I: Iterator,
+{
+    KnownLen { it, remaining: len }
+}
+
+impl<I> Iterator for KnownLen<I>
+where
+    I: Iterator,
+{
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.it.next()?;
+        if self.remaining > 0 {
+            self.remaining -= 1;
+        }
+        Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+impl<I> ExactSizeIterator for KnownLen<I>
+where
+    I: Iterator,
+{
+    fn len(&self) -> usize { self.remaining }
+}
+
+pub fn sample_online<I, T, R>(it: I, k: usize, rng: &mut R) -> Vec<T>
+where
+    I: Iterator<Item = T>,
+    R: Rng,
+{
+    if k == 0 {
+        return Vec::new();
+    }
+    let mut sample = Vec::with_capacity(k);
+    let mut seen = 0usize;
+    for item in it {
+        if sample.len() < k {
+            sample.push(item);
+        } else {
+            let draw = rng.gen_range(0..=seen);
+            if draw < k {
+                sample[draw] = item;
+            }
+        }
+        seen += 1;
+    }
+    sample
+}

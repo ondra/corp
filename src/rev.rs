@@ -52,17 +52,17 @@ pub fn open(base: &str) -> Result<Box<dyn Rev + Sync + Send>, Box<dyn std::error
 
 pub trait Rev: std::fmt::Debug {
     fn count(&self, id: u32) -> u64;
-    fn id2poss(&self, id: u32) -> Box<dyn ExactSizeIterator<Item=u64> + Send + '_>;
+    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + '_>;
 }
 
 impl Rev for Delta {
     fn count(&self, id: u32) -> u64 { self.count(id) }
-    fn id2poss(&self, id: u32) -> Box<dyn ExactSizeIterator<Item=u64> + Send + '_> { Box::new(self.id2poss(id)) }
+    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + '_> { Box::new(self.id2poss(id)) }
 }
 
 impl Rev for DeltaDense {
     fn count(&self, id: u32) -> u64 { self.count(id) }
-    fn id2poss(&self, id: u32) -> Box<dyn ExactSizeIterator<Item=u64> + Send + '_> { Box::new(self.id2poss(id)) }
+    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + '_> { Box::new(self.id2poss(id)) }
 }
 
 #[derive(Debug)]

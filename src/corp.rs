@@ -80,8 +80,7 @@ pub struct DynAttr {
     lrev: Box<dyn rev::Rev + Sync + Send>,
 }
 
-// pub trait Attr<'a> : std::fmt::Debug + Frequency {
-pub trait Attr: std::fmt::Debug + Frequency + Sync + Send {
+pub trait Attr: std::fmt::Debug + Sync + Send {
     fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_>;
     fn id2str(&self, id: u32) -> &str;
     fn str2id(&self, s: &str) -> Option<u32>;
@@ -137,7 +136,10 @@ impl Attr for DynAttr {
     fn id_range(&self) -> u32 { self.lex.id_range() }
     fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
         match t {
-            "frq" => Ok(Box::new(DynFrequency{ da: &self })),
+            "frq" => Ok(Box::new(DynFrequency{
+                da: self,
+                base_freq: self.fromattr.get_freq("frq")?,
+            })),
             _ => open_freq(&self.path, t),
         }
     }
@@ -154,23 +156,15 @@ pub trait Frequency {
     fn frq(&self, id: u32) -> u64;
 }
 
-impl Frequency for DynAttr {
-    // fn frq(&self, id: u32) -> u64 { as_slice_ref(&self.frqm)[id as usize] }
-    fn frq(&self, id: u32) -> u64 {
-        let mut tot = 0u64;
-        for oid in self.lrev.id2poss(id) {
-            tot += self.fromattr.frq(oid as u32)
-        }
-        tot
-    }
+struct DynFrequency<'a> {
+    da: &'a DynAttr,
+    base_freq: Box<dyn Frequency + Send + Sync + 'a>,
 }
-
-struct DynFrequency<'a> { pub da: &'a DynAttr, }
 impl Frequency for DynFrequency<'_> {
     fn frq(&self, id: u32) -> u64 {
         let mut tot = 0u64;
         for oid in self.da.lrev.id2poss(id) {
-            tot += self.da.fromattr.frq(oid as u32)
+            tot += self.base_freq.frq(oid as u32)
         }
         tot
     }
@@ -179,10 +173,6 @@ impl Frequency for DynFrequency<'_> {
 struct RevFrequency<'a> { pub a: &'a StdAttr, }
 impl Frequency for RevFrequency<'_> {
     fn frq(&self, id: u32) -> u64 { self.a.rev.count(id) }
-}
-
-impl Frequency for StdAttr {
-    fn frq(&self, id: u32) -> u64 { self.rev.count(id) }
 }
 
 #[derive(Debug)]

@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use fs_err::File;
 use memmap::MmapOptions;
@@ -142,7 +142,6 @@ impl CorpusLike for SubCorpus {
             inner,
             ranges: self.ranges.clone(),
             freq_base,
-            cached_freq: OnceLock::new(),
         }))
     }
 
@@ -161,7 +160,6 @@ struct SubCorpAttr<'a> {
     inner: Box<dyn Attr + Sync + Send + 'a>,
     ranges: Arc<Ranges>,
     freq_base: String,
-    cached_freq: OnceLock<Option<Box<dyn Frequency + Send + Sync>>>,
 }
 
 impl std::fmt::Debug for SubCorpAttr<'_> {
@@ -170,18 +168,6 @@ impl std::fmt::Debug for SubCorpAttr<'_> {
             .field("inner", &self.inner)
             .field("freq_base", &self.freq_base)
             .finish()
-    }
-}
-
-impl Frequency for SubCorpAttr<'_> {
-    fn frq(&self, id: u32) -> u64 {
-        let cached = self.cached_freq.get_or_init(|| {
-            open_freq(&self.freq_base, "frq").ok()
-        });
-        match cached {
-            Some(f) => f.frq(id),
-            None => u64::MAX,
-        }
     }
 }
 
@@ -198,6 +184,15 @@ impl Attr for SubCorpAttr<'_> {
     fn text(&self) -> &dyn text::Text { self }
 
     fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
+        if t == "frq" {
+            return open_freq(&self.freq_base, "frq").map_err(|_| {
+                std::io::Error::other(format!(
+                    "missing precomputed subcorpus frequency: {}.frq/.frq64",
+                    self.freq_base
+                ))
+                .into()
+            });
+        }
         open_freq(&self.freq_base, t)
     }
 }
@@ -206,52 +201,15 @@ impl Attr for SubCorpAttr<'_> {
 
 impl rev::Rev for SubCorpAttr<'_> {
     fn count(&self, id: u32) -> u64 {
-        // Merge-intersect inner positions with ranges: O(n) time, O(1) space
-        let inner_rev = self.inner.revidx();
-        let pairs = self.ranges.pairs();
-        let mut poss = inner_rev.id2poss(id);
-        let mut count = 0u64;
-        let mut ri = 0;
-        while ri < pairs.len() {
-            let (rbeg, rend) = pairs[ri];
-            // Advance positions until >= rbeg
-            loop {
-                match poss.next() {
-                    Some(pos) if pos < rbeg => continue,
-                    Some(pos) if pos < rend => {
-                        count += 1;
-                        continue;
-                    }
-                    Some(_pos) => {
-                        // pos >= rend, advance range
-                        ri += 1;
-                        // But we already consumed pos, need to check it against next ranges
-                        // Actually we need to re-check _pos against subsequent ranges
-                        // Let's restructure: advance ri until range covers _pos or starts after _pos
-                        while ri < pairs.len() && pairs[ri].1 <= _pos {
-                            ri += 1;
-                        }
-                        if ri < pairs.len() && pairs[ri].0 <= _pos && _pos < pairs[ri].1 {
-                            count += 1;
-                        }
-                        continue;
-                    }
-                    None => return count,
-                }
-            }
-        }
-        count
+        self.id2poss(id).count() as u64
     }
 
-    fn id2poss(&self, id: u32) -> Box<dyn ExactSizeIterator<Item=u64> + Send + '_> {
-        // Two-pass: count first, then iterate with exact length
-        let cnt = self.count(id);
+    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + '_> {
         let inner_poss = self.inner.revidx().id2poss(id);
         Box::new(FilteredRevIter {
             inner: inner_poss,
             pairs: self.ranges.pairs(),
             ri: 0,
-            remaining: cnt as usize,
         })
     }
 }
@@ -326,10 +284,9 @@ impl Iterator for SubCorpIdIter<'_> {
 
 /// Lazy merge-intersect of inner position iterator with ranges.
 struct FilteredRevIter<'a> {
-    inner: Box<dyn ExactSizeIterator<Item=u64> + Send + 'a>,
+    inner: Box<dyn Iterator<Item=u64> + Send + 'a>,
     pairs: &'a [(u64, u64)],
     ri: usize,
-    remaining: usize,
 }
 
 impl Iterator for FilteredRevIter<'_> {
@@ -348,7 +305,6 @@ impl Iterator for FilteredRevIter<'_> {
                         continue;
                     }
                     if pos < rend {
-                        self.remaining -= 1;
                         return Some(pos);
                     }
                     // pos >= rend, advance ranges
@@ -357,7 +313,6 @@ impl Iterator for FilteredRevIter<'_> {
                         self.ri += 1;
                     }
                     if self.ri < self.pairs.len() && self.pairs[self.ri].0 <= pos && pos < self.pairs[self.ri].1 {
-                        self.remaining -= 1;
                         return Some(pos);
                     }
                     // pos is in a gap, continue
@@ -365,14 +320,6 @@ impl Iterator for FilteredRevIter<'_> {
             }
         }
     }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
-    }
-}
-
-impl ExactSizeIterator for FilteredRevIter<'_> {
-    fn len(&self) -> usize { self.remaining }
 }
 
 

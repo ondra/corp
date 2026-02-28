@@ -135,11 +135,12 @@ fn write_freq(
     rev_lists: &[Vec<u32>],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut f = BufWriter::new(File::create(add_suffix(base, ".freq"))?);
+    let freq = fromattr.get_freq("frq")?;
     for poss in rev_lists {
         let mut total: u64 = 0;
         for &orig_id in poss {
             total = total
-                .checked_add(fromattr.frq(orig_id))
+                .checked_add(freq.frq(orig_id))
                 .ok_or("frequency overflow")?;
         }
         if total > i64::MAX as u64 {

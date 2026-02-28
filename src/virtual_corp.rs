@@ -3,15 +3,12 @@ use std::io::Read;
 use fs_err::File;
 use memmap::MmapOptions;
 
-use crate::corp::{Attr, Frequency, Corpus};
+use crate::corp::{Attr, Frequency, Corpus, open_freq};
 use crate::lex;
 use crate::rev;
-use crate::rev::Rev;
 use crate::text;
 use crate::structure;
 use crate::util::as_slice_ref;
-
-// --- Virtdef parser ---
 
 pub fn parse_virtdef(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut f = File::open(path)?;
@@ -37,8 +34,6 @@ pub fn parse_virtdef(path: &str) -> Result<Vec<String>, Box<dyn std::error::Erro
     }
     Ok(names)
 }
-
-// --- SegmentLayout ---
 
 #[derive(Debug)]
 pub struct SegmentLayout {
@@ -94,8 +89,6 @@ impl SegmentLayout {
     }
 }
 
-// --- StructLayout ---
-
 #[derive(Debug)]
 pub struct StructLayout {
     pub cumulative_counts: Vec<u64>,
@@ -138,8 +131,6 @@ impl StructLayout {
     }
 }
 
-// --- Mmap helper for nid/oid u32 arrays ---
-
 fn open_mmap(path: &str) -> Result<memmap::Mmap, Box<dyn std::error::Error>> {
     let f = File::open(path)?;
     Ok(unsafe { MmapOptions::new().map(f.file())? })
@@ -152,8 +143,6 @@ fn nid_lookup(mmap: &memmap::Mmap, local_id: u32) -> u32 {
 fn oid_lookup(mmap: &memmap::Mmap, unified_id: u32) -> u32 {
     as_slice_ref::<u32>(mmap)[unified_id as usize]
 }
-
-// --- VirtualRev ---
 
 #[derive(Debug)]
 pub struct VirtualRev {
@@ -174,41 +163,56 @@ impl rev::Rev for VirtualRev {
         total
     }
 
-    fn id2poss(&self, id: u32) -> Box<dyn ExactSizeIterator<Item=u64> + Send + '_> {
-        // Collect all positions across segments. Since segments are sequential
-        // in the virtual corpus, we can just concatenate with offsets.
-        let mut all_poss = Vec::new();
-        for (i, seg_rev) in self.seg_revs.iter().enumerate() {
-            let seg_id = oid_lookup(&self.oid[i], id);
-            if seg_id == 0xFFFFFFFF { continue; }
-            let offset = self.layout.offset(i);
-            for pos in seg_rev.id2poss(seg_id) {
-                all_poss.push(pos + offset);
-            }
-        }
-        Box::new(ExactVec(all_poss.into_iter()))
+    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + '_> {
+        Box::new(VirtualRevIter::new(self, id))
     }
 }
 
-// Wrapper to make Vec::IntoIter an ExactSizeIterator (it already is, but this
-// ensures the trait object works)
-struct ExactVec(std::vec::IntoIter<u64>);
+struct VirtualRevIter<'a> {
+    rev: &'a VirtualRev,
+    id: u32,
+    seg_idx: usize,
+    cur_offset: u64,
+    cur_iter: Option<Box<dyn Iterator<Item=u64> + Send + 'a>>,
+}
 
-impl Iterator for ExactVec {
+impl<'a> VirtualRevIter<'a> {
+    fn new(rev: &'a VirtualRev, id: u32) -> Self {
+        Self {
+            rev,
+            id,
+            seg_idx: 0,
+            cur_offset: 0,
+            cur_iter: None,
+        }
+    }
+}
+
+impl Iterator for VirtualRevIter<'_> {
     type Item = u64;
-    #[inline]
-    fn next(&mut self) -> Option<u64> { self.0.next() }
-    fn size_hint(&self) -> (usize, Option<usize>) { self.0.size_hint() }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(iter) = self.cur_iter.as_mut() {
+                if let Some(pos) = iter.next() {
+                    return Some(self.cur_offset + pos);
+                }
+            }
+            if self.seg_idx >= self.rev.seg_revs.len() {
+                return None;
+            }
+            let seg = self.seg_idx;
+            self.seg_idx += 1;
+            let seg_id = oid_lookup(&self.rev.oid[seg], self.id);
+            if seg_id == 0xFFFFFFFF {
+                self.cur_iter = None;
+                continue;
+            }
+            self.cur_offset = self.rev.layout.offset(seg);
+            self.cur_iter = Some(self.rev.seg_revs[seg].id2poss(seg_id));
+        }
+    }
 }
-
-impl ExactSizeIterator for ExactVec {
-    fn len(&self) -> usize { self.0.len() }
-}
-
-// SAFETY: Vec::IntoIter<u64> is Send
-unsafe impl Send for ExactVec {}
-
-// --- VirtualAttr ---
 
 #[derive(Debug)]
 pub struct VirtualAttr {
@@ -333,12 +337,6 @@ impl text::Text for VirtualAttr {
     }
 }
 
-impl Frequency for VirtualAttr {
-    fn frq(&self, id: u32) -> u64 {
-        self.vrev.count(id)
-    }
-}
-
 impl Attr for VirtualAttr {
     fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_> {
         Box::new(VirtualIdIter::new(&self.layout, &self.segments, &self.nid, frompos))
@@ -352,22 +350,34 @@ impl Attr for VirtualAttr {
     fn text(&self) -> &dyn text::Text { self }
 
     fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
-        match t {
-            "frq" => Ok(Box::new(VirtualFrequency { vrev: &self.vrev })),
-            _ => Err(format!("unsupported frequency type for virtual attr: {}", t).into()),
+        if let Ok(freq) = open_freq(&self.path, t) {
+            return Ok(freq);
         }
+        let seg_freqs: Result<Vec<_>, _> = self.segments.iter().map(|s| s.get_freq(t)).collect();
+        Ok(Box::new(VirtualFrequency {
+            oid: &self.vrev.oid,
+            seg_freqs: seg_freqs?,
+        }))
     }
 }
 
 struct VirtualFrequency<'a> {
-    vrev: &'a VirtualRev,
+    oid: &'a [memmap::Mmap],
+    seg_freqs: Vec<Box<dyn Frequency + Send + Sync + 'a>>,
 }
 
 impl Frequency for VirtualFrequency<'_> {
-    fn frq(&self, id: u32) -> u64 { self.vrev.count(id) }
+    fn frq(&self, id: u32) -> u64 {
+        self.seg_freqs.iter().enumerate().map(
+            |(i, f)| {
+                let seg_id = oid_lookup(&self.oid[i], id);
+                if seg_id != 0xFFFFFFFF {
+                    f.frq(seg_id)
+                } else { 0 }
+            }
+        ).sum()
+    }
 }
-
-// --- VirtualStruct ---
 
 #[derive(Debug)]
 pub struct VirtualStruct {

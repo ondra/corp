@@ -1,5 +1,5 @@
 use corp::corp::{Attr, Corpus};
-use corp::reservoir_sampling::SamplerExt;
+use corp::reservoir_sampling::{SamplerExt, known_len, sample_online};
 use corp::structure::Struct;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -238,21 +238,33 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let corpus_size = display_attr.text().size() as u64;
-    let poss = qa.revidx().id2poss(id);
     let glue_ref = glue.as_deref();
 
     let mut rng = StdRng::seed_from_u64(666);
     let limit = args.limit.unwrap_or(usize::MAX);
 
-    let iter: Box<dyn Iterator<Item = u64>> = if let Some(n) = args.sample {
-        Box::new(poss.sample(n, &mut rng))
+    if let Some(n) = args.sample {
+        let poss = qa.revidx().id2poss(id);
+        let mut sample = if let Ok(freq) = qa.get_freq("frq") {
+            let total = freq.frq(id);
+            if let Ok(total_len) = usize::try_from(total) {
+                known_len(poss, total_len).sample(n, &mut rng).collect()
+            } else {
+                sample_online(poss, n, &mut rng)
+            }
+        } else {
+            sample_online(poss, n, &mut rng)
+        };
+        sample.sort_unstable();
+        for pos in sample.into_iter().take(limit) {
+            let line = format_line(display_attr.as_ref(), pos, args.window, args.tab, glue_ref, corpus_size);
+            println!("{pos}\t{line}");
+        }
     } else {
-        Box::new(poss)
-    };
-
-    for pos in iter.take(limit) {
-        let line = format_line(display_attr.as_ref(), pos, args.window, args.tab, glue_ref, corpus_size);
-        println!("{pos}\t{line}");
+        for pos in qa.revidx().id2poss(id).take(limit) {
+            let line = format_line(display_attr.as_ref(), pos, args.window, args.tab, glue_ref, corpus_size);
+            println!("{pos}\t{line}");
+        }
     }
 
     Ok(())
