@@ -422,6 +422,7 @@ pub trait CorpusLike {
     fn open_attribute(&self, name: &str) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>>;
     fn open_struct(&self, name: &str) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>>;
     fn get_conf(&self, name: &str) -> Option<String>;
+    fn search_size(&self) -> u64;
 }
 
 impl CorpusLike for Corpus {
@@ -433,5 +434,14 @@ impl CorpusLike for Corpus {
     }
     fn get_conf(&self, name: &str) -> Option<String> {
         Corpus::get_conf(self, name)
+    }
+
+    fn search_size(&self) -> u64 {
+        if let Some(layout) = &self.layout {
+            return layout.total_size();
+        }
+        let defattrname = self.get_conf("DEFAULTATTR").unwrap();
+        let defattr = self.open_attribute(&defattrname).unwrap();
+        defattr.text().size() as u64
     }
 }
