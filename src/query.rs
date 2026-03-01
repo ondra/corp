@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 
 use nom::branch::alt;
-use nom::bytes::complete::{tag, take_while, take_while_m_n};
+use nom::bytes::complete::{is_not, tag, take_while, take_while_m_n};
 use nom::combinator::{all_consuming, map, recognize};
-use nom::error::{convert_error, ParseError, VerboseError, VerboseErrorKind};
+use nom::error::{convert_error, ParseError, VerboseError};
+use nom::multi::fold_many0;
+use nom::character::complete::anychar;
 use nom::sequence::{delimited, preceded, tuple};
 use nom::{Finish, IResult};
 
@@ -59,64 +61,48 @@ fn parse_ident(inp: &S) -> IResult<&S, String, VErr<'_>> {
     )(inp)
 }
 
-fn err_ctx<'a>(inp: &'a S, ctx: &'static str) -> nom::Err<VErr<'a>> {
-    nom::Err::Error(VErr {
-        errors: vec![(inp, VerboseErrorKind::Context(ctx))],
-    })
+fn decode_escape(c: char, quote: char) -> String {
+    match c {
+        '\\' => "\\".to_string(),
+        q if q == quote => q.to_string(),
+        other => {
+            let mut s = String::new();
+            s.push('\\');
+            s.push(other);
+            s
+        }
+    }
 }
 
-fn fail_ctx<'a>(inp: &'a S, ctx: &'static str) -> nom::Err<VErr<'a>> {
-    nom::Err::Failure(VErr {
-        errors: vec![(inp, VerboseErrorKind::Context(ctx))],
-    })
+fn parse_quoted_with<'a>(quote: char) -> impl FnMut(&'a S) -> IResult<&'a S, String, VErr<'a>> {
+    move |inp| {
+        let q = quote.to_string();
+        let normal = match quote {
+            '"' => is_not("\\\""),
+            '\'' => is_not("\\'"),
+            _ => unreachable!(),
+        };
+
+        delimited(
+            tag(q.as_str()),
+            fold_many0(
+                alt((
+                    map(normal, |s: &str| s.to_string()),
+                    map(preceded(tag("\\"), anychar), |c| decode_escape(c, quote)),
+                )),
+                String::new,
+                |mut out: String, part: String| {
+                    out.push_str(&part);
+                    out
+                },
+            ),
+            tag(q.as_str()),
+        )(inp)
+    }
 }
 
 fn parse_quoted(inp: &S) -> IResult<&S, String, VErr<'_>> {
-    let mut chars = inp.chars();
-    let Some(quote) = chars.next() else {
-        return Err(err_ctx(inp, "expected quoted regex value"));
-    };
-    if quote != '"' && quote != '\'' {
-        return Err(err_ctx(inp, "expected quoted regex value"));
-    }
-
-    let mut i = quote.len_utf8();
-    let mut out = String::new();
-    while i < inp.len() {
-        let ch = inp[i..]
-            .chars()
-            .next()
-            .ok_or_else(|| fail_ctx(&inp[i..], "invalid UTF-8 boundary"))?;
-
-        if ch == quote {
-            i += ch.len_utf8();
-            return Ok((&inp[i..], out));
-        }
-
-        if ch == '\\' {
-            i += ch.len_utf8();
-            if i >= inp.len() {
-                return Err(fail_ctx(&inp[i - 1..], "unterminated escape sequence"));
-            }
-            let esc = inp[i..]
-                .chars()
-                .next()
-                .ok_or_else(|| fail_ctx(&inp[i..], "invalid UTF-8 boundary"))?;
-            if esc == quote || esc == '\\' {
-                out.push(esc);
-            } else {
-                out.push('\\');
-                out.push(esc);
-            }
-            i += esc.len_utf8();
-            continue;
-        }
-
-        out.push(ch);
-        i += ch.len_utf8();
-    }
-
-    Err(fail_ctx(inp, "unterminated quoted string"))
+    alt((parse_quoted_with('"'), parse_quoted_with('\'')))(inp)
 }
 
 fn parse_term(inp: &S) -> IResult<&S, RawExpr, VErr<'_>> {
