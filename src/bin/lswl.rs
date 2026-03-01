@@ -1,7 +1,8 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use corp::corp::Corpus;
+use corp::corp::CorpusLike;
+use corp::subcorp::with_corpuslike_spec;
 
 #[derive(Debug)]
 struct Args {
@@ -21,7 +22,7 @@ struct HeapItem {
 
 fn usage(prog: &str) -> String {
     format!(
-        "Usage: {prog} [OPTIONS] CORPUS ATTR\n\
+        "Usage: {prog} [OPTIONS] CORPUS[:SUBCORPUS] ATTR\n\
          OPTIONS:\n\
          -l N    number of items to return (default 100)\n\
          -i N    minimum frequency (default 5)\n\
@@ -127,12 +128,7 @@ fn keep_top(
     }
 }
 
-fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    if args.corpus.contains(':') {
-        return Err("subcorpora are not supported by this Rust port".into());
-    }
-
-    let corpus = Corpus::open(&args.corpus)?;
+fn run_with_corpus(corpus: &dyn CorpusLike, args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let attr = corpus.open_attribute(&args.attr)?;
     let sortfreq = attr.get_freq(&args.sorttype)?;
 
@@ -160,6 +156,10 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    with_corpuslike_spec(&args.corpus, |corpus| run_with_corpus(corpus, &args))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

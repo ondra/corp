@@ -1,5 +1,6 @@
-use corp::corp::{Attr, Corpus};
+use corp::corp::{Attr, CorpusLike};
 use corp::structure::Struct;
+use corp::subcorp::with_corpuslike_spec;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
@@ -21,7 +22,7 @@ struct Args {
 
 fn usage(prog: &str) -> String {
     format!(
-        "Usage: {prog} [OPTIONS] CORPUS WORD\n\
+        "Usage: {prog} [OPTIONS] CORPUS[:SUBCORPUS] WORD\n\
          OPTIONS:\n\
          -a ATTR  attribute to display (default: DEFAULTATTR or word)\n\
          -q ATTR  attribute to query (default: same as -a)\n\
@@ -208,15 +209,21 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let corpus_name = args.corpus.as_ref().ok_or("missing CORPUS argument")?;
     let word = args.word.as_ref().ok_or("missing WORD argument")?;
 
-    let corpus = Corpus::open(corpus_name)?;
+    with_corpuslike_spec(corpus_name, |corpus| run_with_corpus(corpus, &args, word))
+}
 
+fn run_with_corpus(
+    corpus: &dyn CorpusLike,
+    args: &Args,
+    word: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let default_attr = || {
         corpus
             .get_conf("DEFAULTATTR")
             .unwrap_or_else(|| "word".to_string())
     };
-    let display_attr_name = args.attr.unwrap_or_else(&default_attr);
-    let query_attr_name = args.query_attr.unwrap_or_else(default_attr);
+    let display_attr_name = args.attr.clone().unwrap_or_else(&default_attr);
+    let query_attr_name = args.query_attr.clone().unwrap_or_else(default_attr);
 
     let display_attr = corpus.open_attribute(&display_attr_name)?;
     let query_attr = if query_attr_name == display_attr_name {

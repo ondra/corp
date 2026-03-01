@@ -423,6 +423,7 @@ pub trait CorpusLike {
     fn open_struct(&self, name: &str) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>>;
     fn get_conf(&self, name: &str) -> Option<String>;
     fn search_size(&self) -> u64;
+    fn subcorp(&self) -> Option<&crate::subcorp::Ranges> { None }
 }
 
 impl CorpusLike for Corpus {

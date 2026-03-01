@@ -1,3 +1,6 @@
+use corp::corp::{Corpus, CorpusLike};
+use corp::subcorp::{SubCorpus, resolve_subc_path, struct_index_at_or_after_pos};
+
 struct Args {
     corpname: String,
     structname: Option<String>,
@@ -8,7 +11,7 @@ struct Args {
 
 fn usage(prog: &str) -> String {
     format!(
-        "usage: {} CORPUS [STRUCTURE [ATTRIBUTE]] [-o BASE]\ncount corpus positions covered by structure attribute values",
+        "usage: {} CORPUS [STRUCTURE [ATTRIBUTE]] [-o BASE] [-s SUBCPATH]\ncount corpus positions covered by structure attribute values",
         prog
     )
 }
@@ -73,8 +76,12 @@ fn parse_args() -> Result<Args, String> {
     Ok(args)
 }
 
+fn intersect_size(abeg: u64, aend: u64, bbeg: u64, bend: u64) -> u64 {
+    aend.min(bend).saturating_sub(abeg.max(bbeg))
+}
+
 fn write_tokenfile(
-    corpus: &corp::corp::Corpus,
+    corpus: &dyn CorpusLike,
     structname: &str,
     attrnames: &[&str],
     base: &str,
@@ -89,43 +96,63 @@ fn write_tokenfile(
 
     let structure = corpus.open_struct(structname)?;
 
-    let mut attrs = Vec::<Box<dyn corp::corp::Attr>>::with_capacity(attrnames.len());
+    let mut attrs = Vec::with_capacity(attrnames.len());
     for attrname in attrnames {
         let fullname = format!("{}.{}", structname, attrname);
         attrs.push(corpus.open_attribute(&fullname)?);
     }
 
-    let mut iters = attrs
-        .iter()
-        .map(|attr| attr.iter_ids(0))
-        .collect::<Vec<_>>();
     let mut tokencov = attrs
         .iter()
         .map(|attr| vec![0u64; attr.id_range() as usize])
         .collect::<Vec<_>>();
 
-    eprintln!("calculating token coverage for {}", structname);
-    let mut structpos = 0u64;
-    while let Some(first_attr_id) = iters[0].next() {
-        let beg = structure.beg_at(structpos);
-        let end = structure.end_at(structpos);
-        let len = end.saturating_sub(beg) as u64;
-        tokencov[0][first_attr_id as usize] += len;
-
-        for idx in 1..iters.len() {
-            let attr_id = iters[idx]
-                .next()
-                .ok_or("structure attribute lengths do not match")?;
-            tokencov[idx][attr_id as usize] += len;
-        }
-        structpos += 1;
-    }
-
-    for idx in 1..iters.len() {
-        if iters[idx].next().is_some() {
+    let struct_len = structure.len() as u64;
+    for attr in &attrs {
+        if (attr.text().size() as u64) < struct_len {
             return Err("structure attribute lengths do not match".into());
         }
     }
+
+    let mut add_coverage = |structpos: u64, len: u64| {
+        if len == 0 {
+            return;
+        }
+        for (idx, attr) in attrs.iter().enumerate() {
+            let attr_id = attr.text().get(structpos) as usize;
+            tokencov[idx][attr_id] += len;
+        }
+    };
+
+    eprintln!("calculating token coverage for {}", structname);
+    if let Some(ranges) = corpus.subcorp() {
+        for &(rbeg, rend) in ranges.pairs() {
+            if rbeg >= rend {
+                continue;
+            }
+            let Some(mut structpos) = struct_index_at_or_after_pos(structure.as_ref(), rbeg) else {
+                break;
+            };
+            while structpos < struct_len {
+                let beg = structure.beg_at(structpos);
+                if beg >= rend {
+                    break;
+                }
+                let end = structure.end_at(structpos);
+                let len = intersect_size(beg, end, rbeg, rend);
+                add_coverage(structpos, len);
+                structpos += 1;
+            }
+        }
+    } else {
+        for structpos in 0..struct_len {
+            let beg = structure.beg_at(structpos);
+            let end = structure.end_at(structpos);
+            add_coverage(structpos, end.saturating_sub(beg));
+        }
+    }
+
+    // TODO: MULTIVALUE/MULTISEP post-processing from mktokencov.cc is not supported yet.
 
     for (idx, attrname) in attrnames.iter().enumerate() {
         let fpath = format!("{}{}.{}.token", base, structname, attrname);
@@ -142,33 +169,47 @@ fn write_tokenfile(
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = parse_args().map_err(|msg| {
-        eprintln!("{}", msg);
-        "invalid command-line arguments"
-    })?;
+fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let fullcorp = Box::new(Corpus::open(&args.corpname)?);
+    let subcorp = match &args.subcorpus {
+        Some(subcpath) => {
+            let resolved = resolve_subc_path(fullcorp.as_ref(), subcpath);
+            Some(SubCorpus::from_corpus(fullcorp.as_ref(), &resolved)?)
+        }
+        None => None,
+    };
+    let corpus: &dyn CorpusLike = match subcorp.as_ref() {
+        Some(sc) => sc as &dyn CorpusLike,
+        None => fullcorp.as_ref() as &dyn CorpusLike,
+    };
 
-    if args.subcorpus.is_some() {
-        return Err("subcorpora are not supported by this Rust port".into());
-    }
-
-    let corpus = corp::corp::Corpus::open(&args.corpname)?;
-    let base = args.output_base.unwrap_or_else(|| corpus.path.clone() + "/");
+    let base = match (&args.output_base, &args.subcorpus) {
+        (Some(base), _) => base.clone(),
+        (None, Some(subcpath)) => {
+            let resolved = resolve_subc_path(fullcorp.as_ref(), subcpath);
+            resolved.strip_suffix(".subc").unwrap_or(&resolved).to_string() + "."
+        }
+        (None, None) => fullcorp.path.clone() + "/",
+    };
     eprintln!("output prefix is {}", base);
 
     match (&args.structname, &args.attrname) {
         (Some(structname), Some(attrname)) => {
-            write_tokenfile(&corpus, structname, &[attrname], &base)?;
+            write_tokenfile(corpus, structname, &[attrname], &base)?;
         }
         (Some(structname), None) => {
-            let attrnames = corpus.conf.attrnames_in_order();
-            write_tokenfile(&corpus, structname, &attrnames, &base)?;
+            let structure = fullcorp
+                .conf
+                .structure(structname)
+                .ok_or_else(|| format!("unknown structure: {structname}"))?;
+            let attrnames = structure.attrnames_in_order();
+            write_tokenfile(corpus, structname, &attrnames, &base)?;
         }
         (None, None) => {
-            for structname in corpus.conf.structnames_in_order() {
-                let structure = corpus.conf.structure(structname).unwrap();
+            for structname in fullcorp.conf.structnames_in_order() {
+                let structure = fullcorp.conf.structure(structname).unwrap();
                 let attrnames = structure.attrnames_in_order();
-                write_tokenfile(&corpus, &structname, &attrnames, &base)?;
+                write_tokenfile(corpus, &structname, &attrnames, &base)?;
             }
         }
         (None, Some(_)) => {
@@ -177,4 +218,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = parse_args().map_err(|msg| {
+        eprintln!("{}", msg);
+        "invalid command-line arguments"
+    })?;
+    run(args)
 }

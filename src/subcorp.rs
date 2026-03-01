@@ -201,6 +201,47 @@ impl<'a> SubCorpus<'a> {
     }
 }
 
+pub fn resolve_subc_path(corpus: &Corpus, subcpath: &str) -> String {
+    let p = std::path::Path::new(subcpath);
+    if p.is_absolute() || p.exists() {
+        subcpath.to_string()
+    } else {
+        std::path::Path::new(&corpus.path)
+            .join(subcpath)
+            .to_string_lossy()
+            .to_string()
+    }
+}
+
+/// Open `CORPUS` or `CORPUS[:SUBCORPUS]` and call `f` with the resulting CorpusLike.
+pub fn with_corpuslike_spec<R, F>(
+    spec: &str,
+    f: F,
+) -> Result<R, Box<dyn std::error::Error>>
+where
+    F: FnOnce(&dyn CorpusLike) -> Result<R, Box<dyn std::error::Error>>,
+{
+    let (corpname, subcpath) = match spec.split_once(':') {
+        Some((corpname, subcpath)) => (corpname, Some(subcpath)),
+        None => (spec, None),
+    };
+    if corpname.is_empty() {
+        return Err(format!("missing corpus name in corpus spec '{spec}'").into());
+    }
+
+    let corpus = Box::new(Corpus::open(corpname)?);
+    if let Some(subcpath) = subcpath {
+        if subcpath.is_empty() {
+            return Err(format!("missing subcorpus path in corpus spec '{spec}'").into());
+        }
+        let subcpath = resolve_subc_path(corpus.as_ref(), subcpath);
+        let subcorp = SubCorpus::from_corpus(corpus.as_ref(), &subcpath)?;
+        f(&subcorp as &dyn CorpusLike)
+    } else {
+        f(corpus.as_ref() as &dyn CorpusLike)
+    }
+}
+
 impl<'a> CorpusLike for SubCorpus<'a> {
     fn open_attribute(&self, name: &str) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>> {
         let inner = self.corpus.open_attribute(name)?;
@@ -222,6 +263,10 @@ impl<'a> CorpusLike for SubCorpus<'a> {
 
     fn search_size(&self) -> u64 {
         self.ranges.search_size()
+    }
+
+    fn subcorp(&self) -> Option<&Ranges> {
+        Some(&self.ranges)
     }
 }
 
@@ -377,7 +422,104 @@ impl Iterator for FilteredRevIter<'_> {
 
 /// Iterate all structures as (beg, end) pairs.
 pub fn struct_iter(s: &dyn structure::Struct) -> impl Iterator<Item=(u64, u64)> + '_ {
-    (0..s.len() as u64).map(move |i| (s.beg_at(i), s.end_at(i)))
+    struct_iter_from_pos(s, 0)
+}
+
+pub fn struct_index_at_or_after_pos(s: &dyn structure::Struct, pos: u64) -> Option<u64> {
+    if s.is_empty() {
+        return None;
+    }
+    if let Some(idx) = s.num_at_pos(pos) {
+        return Some(idx);
+    }
+    let (idx, _) = s.find_end(pos.saturating_add(1));
+    if idx == u64::MAX { None } else { Some(idx) }
+}
+
+struct StructIterFromPos<'a> {
+    s: &'a dyn structure::Struct,
+    next_idx: u64,
+    end_idx: u64,
+}
+
+impl Iterator for StructIterFromPos<'_> {
+    type Item = (u64, u64);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_idx >= self.end_idx {
+            return None;
+        }
+        let i = self.next_idx;
+        self.next_idx += 1;
+        Some((self.s.beg_at(i), self.s.end_at(i)))
+    }
+}
+
+/// Iterate structures as (beg, end) pairs, starting at the first structure at/after from_pos.
+pub fn struct_iter_from_pos(
+    s: &dyn structure::Struct,
+    from_pos: u64,
+) -> impl Iterator<Item=(u64, u64)> + '_ {
+    let next_idx = struct_index_at_or_after_pos(s, from_pos).unwrap_or(s.len() as u64);
+    StructIterFromPos {
+        s,
+        next_idx,
+        end_idx: s.len() as u64,
+    }
+}
+
+struct FilteredStructIterFromPos<'a> {
+    s: &'a dyn structure::Struct,
+    pairs: &'a [(u64, u64)],
+    ri: usize,
+    doc_idx: u64,
+    start_pos: u64,
+    first_range: bool,
+}
+
+impl FilteredStructIterFromPos<'_> {
+    fn seek_current_range_start(&mut self) {
+        if self.ri >= self.pairs.len() {
+            self.doc_idx = u64::MAX;
+            return;
+        }
+        let (rbeg, _rend) = self.pairs[self.ri];
+        let scan_from = if self.first_range {
+            self.first_range = false;
+            rbeg.max(self.start_pos)
+        } else {
+            rbeg
+        };
+        self.doc_idx = struct_index_at_or_after_pos(self.s, scan_from).unwrap_or(u64::MAX);
+    }
+}
+
+impl Iterator for FilteredStructIterFromPos<'_> {
+    type Item = (u64, u64);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let struct_len = self.s.len() as u64;
+        loop {
+            if self.ri >= self.pairs.len() || self.doc_idx == u64::MAX {
+                return None;
+            }
+            let (rbeg, rend) = self.pairs[self.ri];
+            while self.doc_idx < struct_len {
+                let i = self.doc_idx;
+                let beg = self.s.beg_at(i);
+                if beg >= rend {
+                    break;
+                }
+                let end = self.s.end_at(i);
+                self.doc_idx += 1;
+                if rbeg <= beg && end <= rend {
+                    return Some((beg, end));
+                }
+            }
+            self.ri += 1;
+            self.seek_current_range_start();
+        }
+    }
 }
 
 /// Iterate only structures fully contained within some range.
@@ -385,7 +527,26 @@ pub fn filtered_struct_iter<'a>(
     s: &'a dyn structure::Struct,
     ranges: &'a Ranges,
 ) -> impl Iterator<Item=(u64, u64)> + 'a {
-    struct_iter(s).filter(|&(beg, end)| ranges.contains_range(beg, end))
+    filtered_struct_iter_from_pos(s, ranges, 0)
+}
+
+/// Iterate only structures fully contained within ranges, starting at from_pos.
+/// Iteration walks ranges first, which is efficient for sparse subcorpora.
+pub fn filtered_struct_iter_from_pos<'a>(
+    s: &'a dyn structure::Struct,
+    ranges: &'a Ranges,
+    from_pos: u64,
+) -> impl Iterator<Item=(u64, u64)> + 'a {
+    let mut it = FilteredStructIterFromPos {
+        s,
+        pairs: ranges.pairs(),
+        ri: ranges.first_range_at_or_after(from_pos),
+        doc_idx: u64::MAX,
+        start_pos: from_pos,
+        first_range: true,
+    };
+    it.seek_current_range_start();
+    it
 }
 
 /// Count the number of structures fully contained within the ranges.
