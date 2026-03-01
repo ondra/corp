@@ -1,12 +1,12 @@
-use std::io::Read;
 use fs_err::File;
 use memmap::MmapOptions;
+use std::io::Read;
 
-use crate::corp::{Attr, Frequency, Corpus, open_freq};
+use crate::corp::{Attr, Corpus, Frequency, open_freq};
 use crate::lex;
 use crate::rev;
-use crate::text;
 use crate::structure;
+use crate::text;
 use crate::util::as_slice_ref;
 
 pub fn parse_virtdef(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
@@ -18,13 +18,18 @@ pub fn parse_virtdef(path: &str) -> Result<Vec<String>, Box<dyn std::error::Erro
     let mut lines = buf.lines();
     while let Some(line) = lines.next() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         if let Some(name) = line.strip_prefix('=') {
-            let range_line = lines.next()
+            let range_line = lines
+                .next()
                 .ok_or_else(|| format!("expected range after ={}", name))?
                 .trim();
             if range_line != "0,$" {
-                return Err(format!("unsupported range '{}' for segment {}", range_line, name).into());
+                return Err(
+                    format!("unsupported range '{}' for segment {}", range_line, name).into(),
+                );
             }
             names.push(name.to_string());
         } else {
@@ -51,7 +56,9 @@ impl SegmentLayout {
             sum += s;
             cumulative.push(sum);
         }
-        SegmentLayout { cumulative_sizes: cumulative }
+        SegmentLayout {
+            cumulative_sizes: cumulative,
+        }
     }
 
     pub fn num_segments(&self) -> usize {
@@ -102,7 +109,9 @@ impl StructLayout {
             sum += c;
             cumulative.push(sum);
         }
-        StructLayout { cumulative_counts: cumulative }
+        StructLayout {
+            cumulative_counts: cumulative,
+        }
     }
 
     pub fn total_count(&self) -> u64 {
@@ -162,7 +171,7 @@ impl rev::Rev for VirtualRev<'_> {
         total
     }
 
-    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + Sync + '_> {
+    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item = u64> + Send + Sync + '_> {
         Box::new(VirtualRevIter::new(self, id))
     }
 }
@@ -172,7 +181,7 @@ struct VirtualRevIter<'iter, 'layout> {
     id: u32,
     seg_idx: usize,
     cur_offset: u64,
-    cur_iter: Option<Box<dyn Iterator<Item=u64> + Send + Sync + 'iter>>,
+    cur_iter: Option<Box<dyn Iterator<Item = u64> + Send + Sync + 'iter>>,
 }
 
 impl<'iter, 'layout> VirtualRevIter<'iter, 'layout> {
@@ -273,7 +282,7 @@ struct VirtualIdIter<'a> {
     segments: &'a [Box<dyn Attr + Sync + Send + 'a>],
     nid: &'a [memmap::Mmap],
     cur_seg: usize,
-    cur_iter: Box<dyn Iterator<Item=u32> + 'a>,
+    cur_iter: Box<dyn Iterator<Item = u32> + 'a>,
     remaining_in_seg: u64,
 }
 
@@ -290,13 +299,15 @@ impl<'a> VirtualIdIter<'a> {
         } else {
             0
         };
-        let cur_iter: Box<dyn Iterator<Item=u32> + 'a> = if seg < segments.len() {
+        let cur_iter: Box<dyn Iterator<Item = u32> + 'a> = if seg < segments.len() {
             segments[seg].iter_ids(local)
         } else {
             Box::new(std::iter::empty())
         };
         VirtualIdIter {
-            layout, segments, nid,
+            layout,
+            segments,
+            nid,
             cur_seg: seg,
             cur_iter,
             remaining_in_seg: remaining,
@@ -326,9 +337,15 @@ impl Iterator for VirtualIdIter<'_> {
 }
 
 impl text::Text for VirtualAttr<'_> {
-    fn posat(&self, _pos: u64) -> Option<text::DeltaIter<'_>> { None }
-    fn structat(&self, _pos: u64) -> Option<text::IntIter<'_>> { None }
-    fn size(&self) -> usize { self.layout.total_size() as usize }
+    fn posat(&self, _pos: u64) -> Option<text::DeltaIter<'_>> {
+        None
+    }
+    fn structat(&self, _pos: u64) -> Option<text::IntIter<'_>> {
+        None
+    }
+    fn size(&self) -> usize {
+        self.layout.total_size() as usize
+    }
     fn get(&self, pos: u64) -> u32 {
         let (seg, local) = self.layout.locate(pos);
         let local_id = self.segments[seg].text().get(local);
@@ -337,18 +354,36 @@ impl text::Text for VirtualAttr<'_> {
 }
 
 impl Attr for VirtualAttr<'_> {
-    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_> {
-        Box::new(VirtualIdIter::new(&self.layout, &self.segments, &self.nid, frompos))
+    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item = u32> + '_> {
+        Box::new(VirtualIdIter::new(
+            &self.layout,
+            &self.segments,
+            &self.nid,
+            frompos,
+        ))
     }
 
-    fn id2str(&self, id: u32) -> &str { self.lex.id2str(id) }
-    fn str2id(&self, s: &str) -> Option<u32> { self.lex.str2id(s) }
-    fn id_range(&self) -> u32 { self.lex.id_range() }
+    fn id2str(&self, id: u32) -> &str {
+        self.lex.id2str(id)
+    }
+    fn str2id(&self, s: &str) -> Option<u32> {
+        self.lex.str2id(s)
+    }
+    fn id_range(&self) -> u32 {
+        self.lex.id_range()
+    }
 
-    fn revidx(&self) -> &dyn rev::Rev { &self.vrev }
-    fn text(&self) -> &dyn text::Text { self }
+    fn revidx(&self) -> &dyn rev::Rev {
+        &self.vrev
+    }
+    fn text(&self) -> &dyn text::Text {
+        self
+    }
 
-    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
+    fn get_freq(
+        &self,
+        t: &str,
+    ) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
         if let Ok(freq) = open_freq(&self.path, t) {
             return Ok(freq);
         }
@@ -367,14 +402,18 @@ struct VirtualFrequency<'a> {
 
 impl Frequency for VirtualFrequency<'_> {
     fn frq(&self, id: u32) -> u64 {
-        self.seg_freqs.iter().enumerate().map(
-            |(i, f)| {
+        self.seg_freqs
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
                 let seg_id = oid_lookup(&self.oid[i], id);
                 if seg_id != 0xFFFFFFFF {
                     f.frq(seg_id)
-                } else { 0 }
-            }
-        ).sum()
+                } else {
+                    0
+                }
+            })
+            .sum()
     }
 }
 
@@ -425,7 +464,8 @@ impl structure::Struct for VirtualStruct<'_> {
 
     fn num_at_pos(&self, pos: u64) -> Option<u64> {
         let (seg, local_pos) = self.corp_layout.locate(pos);
-        self.segments[seg].num_at_pos(local_pos)
+        self.segments[seg]
+            .num_at_pos(local_pos)
             .map(|local_struct| local_struct + self.struct_layout.offset(seg))
     }
 }

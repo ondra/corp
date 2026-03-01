@@ -13,7 +13,6 @@ const CHUNK_BYTES: usize = 1024 * 1024 * 1024;
 const MAX_OPEN_RUNS: usize = 32;
 const TEMP_ALIGNMULT: usize = 1;
 
-
 fn add_suffix(base: &Path, suffix: &str) -> std::path::PathBuf {
     let mut s = base.as_os_str().to_os_string();
     s.push(suffix);
@@ -148,17 +147,26 @@ fn remove_temp_run(run: &RunInfo) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn move_run_to_final(
-    base: &Path,
-    run: &RunInfo,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn move_run_to_final(base: &Path, run: &RunInfo) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::rename(add_suffix(&run.base, ".rev"), add_suffix(base, ".rev"))?;
     if USE_DELTA_DENSE_REV {
-        std::fs::rename(add_suffix(&run.base, ".rev.idx0"), add_suffix(base, ".rev.idx0"))?;
-        std::fs::rename(add_suffix(&run.base, ".rev.idx1"), add_suffix(base, ".rev.idx1"))?;
+        std::fs::rename(
+            add_suffix(&run.base, ".rev.idx0"),
+            add_suffix(base, ".rev.idx0"),
+        )?;
+        std::fs::rename(
+            add_suffix(&run.base, ".rev.idx1"),
+            add_suffix(base, ".rev.idx1"),
+        )?;
     } else {
-        std::fs::rename(add_suffix(&run.base, ".rev.idx"), add_suffix(base, ".rev.idx"))?;
-        std::fs::rename(add_suffix(&run.base, ".rev.cnt"), add_suffix(base, ".rev.cnt"))?;
+        std::fs::rename(
+            add_suffix(&run.base, ".rev.idx"),
+            add_suffix(base, ".rev.idx"),
+        )?;
+        std::fs::rename(
+            add_suffix(&run.base, ".rev.cnt"),
+            add_suffix(base, ".rev.cnt"),
+        )?;
     }
     Ok(())
 }
@@ -174,7 +182,10 @@ fn merge_runs_pass(
         let out_base = temp_base(base, *seq);
         *seq += 1;
         write_temp_rev_from_runs(&out_base, max_id, chunk)?;
-        merged.push(RunInfo { base: out_base, max_id });
+        merged.push(RunInfo {
+            base: out_base,
+            max_id,
+        });
         for run in chunk {
             remove_temp_run(run)?;
         }
@@ -194,7 +205,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let attrname = args.remove(0);
     let corp = Corpus::open(&corpname)?;
     let base = std::path::PathBuf::from(corp.path.clone() + "/" + &attrname);
-    let text = corp.open_text(base.to_str().unwrap(), corp.get_text_storage_type(&attrname)?)?;
+    let text = corp.open_text(
+        base.to_str().unwrap(),
+        corp.get_text_storage_type(&attrname)?,
+    )?;
     let size = text.size() as u64;
 
     let chunk_pairs = std::cmp::max(1, CHUNK_BYTES / std::mem::size_of::<(u32, u64)>());
@@ -225,7 +239,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let run_base = temp_base(&base, seq);
         seq += 1;
         write_temp_rev_from_pairs(&run_base, chunk_max_id, &pairs)?;
-        runs.push(RunInfo { base: run_base, max_id: chunk_max_id });
+        runs.push(RunInfo {
+            base: run_base,
+            max_id: chunk_max_id,
+        });
         if chunk_max_id > global_max_id {
             global_max_id = chunk_max_id;
         }
@@ -240,7 +257,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let final_base = temp_base(&base, seq);
-    let final_run = RunInfo { base: final_base, max_id: global_max_id };
+    let final_run = RunInfo {
+        base: final_base,
+        max_id: global_max_id,
+    };
     write_rev_from_runs(&final_run.base, global_max_id, &runs)?;
     for run in &runs {
         remove_temp_run(run)?;

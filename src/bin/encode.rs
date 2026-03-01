@@ -8,11 +8,11 @@ use std::collections::hash_map::DefaultHasher;
 
 use std::collections::HashMap;
 
-use std::cmp::{min};
+use std::cmp::min;
 use std::io::BufWriter;
-use std::io::Write;
 use std::io::Seek;
 use std::io::SeekFrom;
+use std::io::Write;
 
 type Atom = usize;
 
@@ -25,7 +25,7 @@ impl BinFile {
         let f = File::create(path)?;
         let bw = BufWriter::new(f);
 
-        Ok(BinFile{f: bw})
+        Ok(BinFile { f: bw })
     }
 
     pub fn put(&mut self, val: u64) -> Result<(), Box<dyn std::error::Error>> {
@@ -34,9 +34,8 @@ impl BinFile {
     }
 
     pub fn finalize(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-       Ok(self.f.flush()?)
+        Ok(self.f.flush()?)
     }
-
 }
 
 pub struct WriteBits {
@@ -66,9 +65,9 @@ impl WriteBits {
     // gamma-encoded length followed by the binary value
     fn delta(&mut self, val: u64) {
         assert!(val > 0);
-        let mut len = u64::BITS as usize - val.leading_zeros() as usize; 
+        let mut len = u64::BITS as usize - val.leading_zeros() as usize;
         self.gamma(len as u64);
-        let mut rest = ( val & !(1<<(len-1)) ) as Atom;
+        let mut rest = (val & !(1 << (len - 1))) as Atom;
         len -= 1;
         while len > 0 {
             self.reserve();
@@ -84,9 +83,9 @@ impl WriteBits {
     // unary-encoded length followed by the binary value
     fn gamma(&mut self, val: u64) {
         assert!(val > 0);
-        let mut len = u64::BITS as usize - val.leading_zeros() as usize; 
+        let mut len = u64::BITS as usize - val.leading_zeros() as usize;
         self.unary(len as u64);
-        let mut rest = ( val & !(1<<(len-1)) ) as Atom;
+        let mut rest = (val & !(1 << (len - 1))) as Atom;
         len -= 1;
         while len > 0 {
             self.reserve();
@@ -118,7 +117,7 @@ impl WriteBits {
 
     // write val 0-bits followed by one 1-bit
     fn unary(&mut self, val: u64) {
-        assert!(val<=63);
+        assert!(val <= 63);
         assert!(val > 0);
 
         let mut len = (val - 1) as usize;
@@ -136,8 +135,9 @@ impl WriteBits {
     // write the remaining contents of the buffer
     fn finish(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.usedbits() > 0 {
-            let num_bytes = (self.usedbits()+7) % 8;
-            self.target.write_all(&self.part.to_le_bytes()[0..num_bytes])?;
+            let num_bytes = (self.usedbits() + 7) % 8;
+            self.target
+                .write_all(&self.part.to_le_bytes()[0..num_bytes])?;
         }
         self.target.flush()?;
         Ok(())
@@ -158,7 +158,7 @@ fn main() {
     let arg1 = std::env::args().nth(1).expect("arg1");
 
     let stdin = std::io::stdin();
-    let mut r : Box<dyn BufRead> = if arg1 == "-" {
+    let mut r: Box<dyn BufRead> = if arg1 == "-" {
         Box::new(stdin.lock())
     } else {
         let f = File::open(arg1).expect("x");
@@ -173,7 +173,8 @@ fn main() {
 
     let mut wb = BinFile::new("/tmp/xyz.text").unwrap();
     wb.f.seek(SeekFrom::Start(0)).unwrap();
-    wb.f.write_all(&[0xa3u8, b'f', b'i', b'n', b'D', b'T']).unwrap();
+    wb.f.write_all(&[0xa3u8, b'f', b'i', b'n', b'D', b'T'])
+        .unwrap();
 
     wb.f.seek(SeekFrom::Start(32)).unwrap();
 
@@ -186,9 +187,12 @@ fn main() {
         buf.clear();
 
         match r.read_line(&mut buf) {
-            Ok(0) => { break },
-            Ok(_n) => {},
-            Err(e) => { eprintln!("error: {}", e); break },
+            Ok(0) => break,
+            Ok(_n) => {}
+            Err(e) => {
+                eprintln!("error: {}", e);
+                break;
+            }
         };
 
         // strip end of line
@@ -198,9 +202,9 @@ fn main() {
                 buf.pop();
             }
         }
-        
+
         let id = match lex.get(&buf) {
-            Some(id) => { *id },
+            Some(id) => *id,
             None => {
                 lex.insert(buf.clone(), nextid);
                 let curid = nextid;
@@ -214,7 +218,6 @@ fn main() {
 
         Hash::hash(&id, &mut h);
         //eprintln!("{}", id);
-
     }
     wl.finish().unwrap();
     let mut wb = wl.into();
@@ -224,11 +227,10 @@ fn main() {
     let segment_size = 128;
     let text_size = position;
 
-    wl.delta(segment_size+1);
-    wl.delta(text_size+1);
+    wl.delta(segment_size + 1);
+    wl.delta(text_size + 1);
 
     wl.finish().unwrap();
-
 
     eprintln!("hash {}", h.finish());
 }

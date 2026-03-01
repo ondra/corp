@@ -1,5 +1,5 @@
 //use crate::{lex,corp,text,bits,rev,structure};
-#![allow(warnings)] 
+#![allow(warnings)]
 
 use corp::corp;
 //use corp;
@@ -25,7 +25,9 @@ fn main() {
 
     let s = corp.open_struct("doc").expect("structure open failed");
     println!("{:?}", s);
-    let st = corp.open_structtext("doc", "month").expect("text open failed");
+    let st = corp
+        .open_structtext("doc", "month")
+        .expect("text open failed");
     println!("{:?}", st);
 
     let mut it = attr.iter_ids(100);
@@ -44,10 +46,11 @@ fn main() {
         let i = dn;
         // let mut it = attr.iter_ids(i);
         // let id = it.next().unwrap();
-        let beg = s.find_beg(i,
-                             // laststructno.unwrap_or(0)
-                             //0
-                             );
+        let beg = s.find_beg(
+            i,
+            // laststructno.unwrap_or(0)
+            //0
+        );
         // println!("{:?}: {} {} {:?}", i, id, attr.id2str(id as u32), beg )
         tot += beg; //.unwrap_or(0);
     }
@@ -65,7 +68,6 @@ fn main() {
         let itt = attr.iter_ids(p).next().unwrap();
         println!("{} {}", p, itt);
     }*/
-
 
     //println!("{:#?}", parse_blk(&buf));
     // println!("{}", parse_blk(&buf));

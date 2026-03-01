@@ -1,7 +1,7 @@
-use std::io::*;
 use fs_err::File;
-use std::str;
 use std::cmp::Ordering;
+use std::io::*;
+use std::str;
 
 use memmap::MmapOptions;
 
@@ -26,7 +26,7 @@ impl MapLex {
             unsafe { MmapOptions::new().map(f.file()) }
         };
 
-        Ok(MapLex{
+        Ok(MapLex {
             name: base.to_string(),
             lex: open_map(".lex")?,
             srt: open_map(".lex.srt")?,
@@ -38,12 +38,13 @@ impl MapLex {
         let l: u32 = read(&self.idx, id as usize);
         let mut r: u32 = l;
         while r < self.lex.len() as u32 {
-            if self.lex[r as usize] == 0 { break; }
-            else { r += 1; }
+            if self.lex[r as usize] == 0 {
+                break;
+            } else {
+                r += 1;
+            }
         }
-        return unsafe {
-            std::str::from_utf8_unchecked(&self.lex[l as usize..r as usize])
-        }
+        return unsafe { std::str::from_utf8_unchecked(&self.lex[l as usize..r as usize]) };
     }
 
     pub fn str2id(&self, s: &str) -> Option<u32> {

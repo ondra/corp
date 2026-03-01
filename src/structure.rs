@@ -1,10 +1,10 @@
-use std::io::*;
 use fs_err::File;
+use std::io::*;
 use std::str;
 //use std::cmp::Ordering;
 
-use memmap::MmapOptions;
 use crate::util::as_slice_ref;
+use memmap::MmapOptions;
 
 #[inline]
 pub fn read<T: Sized>(mmap: &memmap::Mmap, idx: usize) -> T {
@@ -31,16 +31,16 @@ impl MapStructure64 {
             unsafe { MmapOptions::new().map(f.file()) }
         };
 
-        Ok(MapStructure64{
+        Ok(MapStructure64 {
             name: base.to_string(),
             rng: open_map(".rng")?,
         })
     }
-    
+
     pub fn beg_at(&self, pos: u64) -> u64 {
         read(&self.rng, (pos * 2) as usize)
     }
-    
+
     pub fn end_at(&self, pos: u64) -> u64 {
         as_slice_ref::<u64>(&self.rng)[(pos * 2 + 1) as usize] as u64
     }
@@ -52,7 +52,7 @@ impl MapStructure32 {
             let f = File::open(base.to_string() + name)?;
             unsafe { MmapOptions::new().map(f.file()) }
         };
-        Ok(MapStructure32{
+        Ok(MapStructure32 {
             name: base.to_string(),
             rng: open_map(".rng")?,
         })
@@ -65,17 +65,24 @@ impl MapStructure32 {
     }
 }
 
-pub fn open(base: &str, type64: bool) -> std::result::Result<Box<dyn Struct + Sync + Send>,
-    Box<dyn std::error::Error>> {
-    Ok(if type64 { Box::new(MapStructure64::open(base)?) }
-    else { Box::new(MapStructure32::open(base)?) })
+pub fn open(
+    base: &str,
+    type64: bool,
+) -> std::result::Result<Box<dyn Struct + Sync + Send>, Box<dyn std::error::Error>> {
+    Ok(if type64 {
+        Box::new(MapStructure64::open(base)?)
+    } else {
+        Box::new(MapStructure32::open(base)?)
+    })
 }
 
 pub trait Struct: std::fmt::Debug {
     fn beg_at(&self, pos: u64) -> u64;
     fn end_at(&self, pos: u64) -> u64;
     fn len(&self) -> usize;
-    fn is_empty(&self) -> bool { self.len() == 0 }
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     /*
     fn find_beg(&self, pos: u64, start_at_struct_pos: u64) -> Option<u64> {
         let mut incr = 1u64;
@@ -113,35 +120,48 @@ pub trait Struct: std::fmt::Debug {
     }
 }
 
-
 impl Struct for MapStructure32 {
-    fn beg_at(&self, pos: u64) -> u64 { self.beg_at(pos) }
-    fn end_at(&self, pos: u64) -> u64 { self.end_at(pos) }
-    fn len(&self) -> usize { self.rng.len() / 8 }
+    fn beg_at(&self, pos: u64) -> u64 {
+        self.beg_at(pos)
+    }
+    fn end_at(&self, pos: u64) -> u64 {
+        self.end_at(pos)
+    }
+    fn len(&self) -> usize {
+        self.rng.len() / 8
+    }
 }
 
 impl Struct for MapStructure64 {
-    fn beg_at(&self, pos: u64) -> u64 { self.beg_at(pos) }
-    fn end_at(&self, pos: u64) -> u64 { self.end_at(pos) }
-    fn len(&self) -> usize { self.rng.len() / 16 }
+    fn beg_at(&self, pos: u64) -> u64 {
+        self.beg_at(pos)
+    }
+    fn end_at(&self, pos: u64) -> u64 {
+        self.end_at(pos)
+    }
+    fn len(&self) -> usize {
+        self.rng.len() / 16
+    }
 }
 
 fn find_end_i(s: &(impl Struct + ?Sized), pos: u64) -> (u64, u64) {
     let mut curr = 0u64;
     let last = s.len() as u64 - 1;
     let finval = u64::MAX;
-    if !(curr < last) { return (finval, finval); }
+    if !(curr < last) {
+        return (finval, finval);
+    }
     let mut incr = 1u64;
     while (curr + incr) < last &&
         /* abs( */ s.end_at(curr + incr) /* ) */ <= pos
-            {
+    {
         curr += incr;
         incr *= 2;
     }
     while incr > 0 {
         if (curr + incr) < last &&
             /* abs( */ s.end_at(curr + incr) /* ) */ <= pos
-                {
+        {
             curr += incr;
         }
         incr /= 2;
@@ -155,8 +175,11 @@ fn find_end_i(s: &(impl Struct + ?Sized), pos: u64) -> (u64, u64) {
     while curr < last && s.end_at(curr) /*.abs()*/ < pos {
         curr += 1;
     }
-    if curr < last { (curr, s.beg_at(curr)) }
-    else { (finval, finval) }
+    if curr < last {
+        (curr, s.beg_at(curr))
+    } else {
+        (finval, finval)
+    }
 }
 
 fn find_beg_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
@@ -164,16 +187,20 @@ fn find_beg_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
     let prev = curr;
     let last = s.len() as u64 - 1;
     let finval = u64::MAX;
-    if !(curr < last) { return finval; }
+    if !(curr < last) {
+        return finval;
+    }
     let mut incr = 1u64;
     while (curr + incr) < last &&
-        /* abs( */ s.beg_at(curr + incr) /* ) */ <= pos {
+        /* abs( */ s.beg_at(curr + incr) /* ) */ <= pos
+    {
         curr += incr;
         incr *= 2;
     }
     while incr > 0 {
         if (curr + incr) < last &&
-            /* abs( */ s.beg_at(curr + incr) /* ) */ <= pos {
+            /* abs( */ s.beg_at(curr + incr) /* ) */ <= pos
+        {
             curr += incr;
         }
         incr /= 2;
@@ -188,8 +215,7 @@ fn find_beg_i(s: &(impl Struct + ?Sized), pos: u64) -> u64 {
             curr_1 -= 1;
         }
     }
-    if curr < last { s.beg_at(curr) }
-    else { finval }
+    if curr < last { s.beg_at(curr) } else { finval }
 }
 
 fn num_at_pos_i(s: &(impl Struct + ?Sized), pos: u64) -> Option<u64> {
@@ -213,7 +239,7 @@ fn num_at_pos_i(s: &(impl Struct + ?Sized), pos: u64) -> Option<u64> {
         structpos -= 1;
     }
     if s.beg_at(structpos) == s.beg_at(structpos) && s.beg_at(structpos) == pos {
-        return Some(structpos)
+        return Some(structpos);
     }
-    return None
+    return None;
 }

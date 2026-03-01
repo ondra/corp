@@ -112,7 +112,8 @@ impl BitsWriter {
     pub fn finish(mut self) -> Result<BufWriter<File>, Box<dyn std::error::Error>> {
         if self.usedbits() > 0 {
             let num_bytes = (self.usedbits() + 7) / 8;
-            self.target.write_all(&self.part.to_le_bytes()[0..num_bytes])?;
+            self.target
+                .write_all(&self.part.to_le_bytes()[0..num_bytes])?;
             self.total_bits += (num_bytes * 8) as u64;
         }
         self.target.flush()?;
@@ -132,7 +133,12 @@ mod tests {
 
     fn tmp_path(name: &str) -> std::path::PathBuf {
         let n = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("corp_wrbits_test_{}_{}_{}", std::process::id(), n, name))
+        std::env::temp_dir().join(format!(
+            "corp_wrbits_test_{}_{}_{}",
+            std::process::id(),
+            n,
+            name
+        ))
     }
 
     fn read_file_words(path: &std::path::Path) -> Vec<u64> {
@@ -207,7 +213,9 @@ mod tests {
 
     #[test]
     fn gamma_roundtrip_small_and_large() {
-        let mut values = vec![1u64, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 63, 64, 65, 127, 128, 129];
+        let mut values = vec![
+            1u64, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 63, 64, 65, 127, 128, 129,
+        ];
         values.extend([1u64 << 10, (1u64 << 10) + 1, 1u64 << 20, (1u64 << 20) + 123]);
 
         let (mem, _bits) = write_with("gamma.bin", |w| {
@@ -224,7 +232,9 @@ mod tests {
 
     #[test]
     fn delta_roundtrip_small_and_large() {
-        let mut values = vec![1u64, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 63, 64, 65, 127, 128, 129];
+        let mut values = vec![
+            1u64, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 63, 64, 65, 127, 128, 129,
+        ];
         values.extend([1u64 << 10, (1u64 << 10) + 1, 1u64 << 20, (1u64 << 20) + 123]);
 
         let (mem, _bits) = write_with("delta.bin", |w| {

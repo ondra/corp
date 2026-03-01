@@ -1,8 +1,8 @@
 use corp::corp::{Attr, CorpusLike};
 use corp::structure::Struct;
 use corp::subcorp::with_corpuslike_spec;
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 const VERSION: &str = git_version::git_version!(args = ["--tags", "--always", "--dirty"]);
 
@@ -251,7 +251,14 @@ fn run_with_corpus(
 
     let poss_sampler = qa.id2poss_sampler(args.sample);
     for pos in poss_sampler.id2poss_with_rng(id, &mut rng).take(limit) {
-        let line = format_line(display_attr.as_ref(), pos, args.window, args.tab, glue_ref, corpus_size);
+        let line = format_line(
+            display_attr.as_ref(),
+            pos,
+            args.window,
+            args.tab,
+            glue_ref,
+            corpus_size,
+        );
         println!("{pos}\t{line}");
     }
 

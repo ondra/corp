@@ -4,8 +4,8 @@ use std::sync::OnceLock;
 
 use crate::corp::{Attr, Corpus, CorpusLike, Frequency, open_freq};
 use crate::rev;
-use crate::text;
 use crate::structure;
+use crate::text;
 use crate::util::as_slice_ref;
 
 pub struct Ranges {
@@ -17,7 +17,10 @@ impl Ranges {
     pub fn open(path: &str) -> Result<Ranges, Box<dyn std::error::Error>> {
         let f = File::open(path)?;
         let map = unsafe { MmapOptions::new().map(f.file())? };
-        Ok(Ranges { map, search_size_cache: OnceLock::new() })
+        Ok(Ranges {
+            map,
+            search_size_cache: OnceLock::new(),
+        })
     }
 
     pub fn pairs(&self) -> &[(u64, u64)] {
@@ -35,9 +38,9 @@ impl Ranges {
     /// Total number of positions covered by the subcorpus.
     /// Cached after first computation.
     pub fn search_size(&self) -> u64 {
-        *self.search_size_cache.get_or_init(|| {
-            self.pairs().iter().map(|&(b, e)| e.saturating_sub(b)).sum()
-        })
+        *self
+            .search_size_cache
+            .get_or_init(|| self.pairs().iter().map(|&(b, e)| e.saturating_sub(b)).sum())
     }
 
     /// Compute evenly spaced worker starts as absolute corpus positions.
@@ -188,12 +191,20 @@ impl<'a> SubCorpus<'a> {
     */
 
     /// Layer subcorpus over an already-opened corpus.
-    pub fn from_corpus(corpus: &'a Corpus, subcpath: &str) -> Result<SubCorpus<'a>, Box<dyn std::error::Error>> {
+    pub fn from_corpus(
+        corpus: &'a Corpus,
+        subcpath: &str,
+    ) -> Result<SubCorpus<'a>, Box<dyn std::error::Error>> {
         let ranges = Ranges::open(subcpath)?;
-        let subcorp_base = subcpath.strip_suffix("subc")
+        let subcorp_base = subcpath
+            .strip_suffix("subc")
             .unwrap_or(subcpath)
             .to_string();
-        Ok(SubCorpus { corpus, ranges, subcorp_base })
+        Ok(SubCorpus {
+            corpus,
+            ranges,
+            subcorp_base,
+        })
     }
 
     pub fn ranges(&self) -> &Ranges {
@@ -214,10 +225,7 @@ pub fn resolve_subc_path(corpus: &Corpus, subcpath: &str) -> String {
 }
 
 /// Open `CORPUS` or `CORPUS[:SUBCORPUS]` and call `f` with the resulting CorpusLike.
-pub fn with_corpuslike_spec<R, F>(
-    spec: &str,
-    f: F,
-) -> Result<R, Box<dyn std::error::Error>>
+pub fn with_corpuslike_spec<R, F>(spec: &str, f: F) -> Result<R, Box<dyn std::error::Error>>
 where
     F: FnOnce(&dyn CorpusLike) -> Result<R, Box<dyn std::error::Error>>,
 {
@@ -243,7 +251,10 @@ where
 }
 
 impl<'a> CorpusLike for SubCorpus<'a> {
-    fn open_attribute(&self, name: &str) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>> {
+    fn open_attribute(
+        &self,
+        name: &str,
+    ) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>> {
         let inner = self.corpus.open_attribute(name)?;
         let freq_base = self.subcorp_base.clone() + name;
         Ok(Box::new(SubCorpAttr {
@@ -253,7 +264,10 @@ impl<'a> CorpusLike for SubCorpus<'a> {
         }))
     }
 
-    fn open_struct(&self, name: &str) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>> {
+    fn open_struct(
+        &self,
+        name: &str,
+    ) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>> {
         self.corpus.open_struct(name)
     }
 
@@ -286,18 +300,31 @@ impl std::fmt::Debug for SubCorpAttr<'_> {
 }
 
 impl Attr for SubCorpAttr<'_> {
-    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_> {
+    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item = u32> + '_> {
         Box::new(SubCorpIdIter::new(&*self.inner, &self.ranges, frompos))
     }
 
-    fn id2str(&self, id: u32) -> &str { self.inner.id2str(id) }
-    fn str2id(&self, s: &str) -> Option<u32> { self.inner.str2id(s) }
-    fn id_range(&self) -> u32 { self.inner.id_range() }
+    fn id2str(&self, id: u32) -> &str {
+        self.inner.id2str(id)
+    }
+    fn str2id(&self, s: &str) -> Option<u32> {
+        self.inner.str2id(s)
+    }
+    fn id_range(&self) -> u32 {
+        self.inner.id_range()
+    }
 
-    fn revidx(&self) -> &dyn rev::Rev { self }
-    fn text(&self) -> &dyn text::Text { self }
+    fn revidx(&self) -> &dyn rev::Rev {
+        self
+    }
+    fn text(&self) -> &dyn text::Text {
+        self
+    }
 
-    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
+    fn get_freq(
+        &self,
+        t: &str,
+    ) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
         open_freq(&self.freq_base, t)
     }
 }
@@ -307,7 +334,7 @@ impl rev::Rev for SubCorpAttr<'_> {
         self.id2poss(id).count() as u64
     }
 
-    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item=u64> + Send + Sync + '_> {
+    fn id2poss(&self, id: u32) -> Box<dyn Iterator<Item = u64> + Send + Sync + '_> {
         let inner_poss = self.inner.revidx().id2poss(id);
         Box::new(FilteredRevIter {
             inner: inner_poss,
@@ -318,19 +345,26 @@ impl rev::Rev for SubCorpAttr<'_> {
 }
 
 impl text::Text for SubCorpAttr<'_> {
-    fn size(&self) -> usize { self.inner.text().size() as usize }
-    fn get(&self, pos: u64) -> u32 { self.inner.text().get(pos) }
-    fn posat(&self, _pos: u64) -> Option<text::DeltaIter<'_>> { None }
-    fn structat(&self, _pos: u64) -> Option<text::IntIter<'_>> { None }
+    fn size(&self) -> usize {
+        self.inner.text().size() as usize
+    }
+    fn get(&self, pos: u64) -> u32 {
+        self.inner.text().get(pos)
+    }
+    fn posat(&self, _pos: u64) -> Option<text::DeltaIter<'_>> {
+        None
+    }
+    fn structat(&self, _pos: u64) -> Option<text::IntIter<'_>> {
+        None
+    }
 }
-
 
 /// Walks through active ranges, yielding IDs only from positions within ranges.
 struct SubCorpIdIter<'a> {
     inner: &'a dyn Attr,
     ranges: &'a Ranges,
     ri: usize,
-    cur_iter: Box<dyn Iterator<Item=u32> + 'a>,
+    cur_iter: Box<dyn Iterator<Item = u32> + 'a>,
     remaining_in_range: u64,
 }
 
@@ -340,7 +374,9 @@ impl<'a> SubCorpIdIter<'a> {
         let ri = ranges.first_range_at_or_after(frompos);
         if ri >= pairs.len() {
             return SubCorpIdIter {
-                inner, ranges, ri,
+                inner,
+                ranges,
+                ri,
                 cur_iter: Box::new(std::iter::empty()),
                 remaining_in_range: 0,
             };
@@ -349,7 +385,9 @@ impl<'a> SubCorpIdIter<'a> {
         let start = rbeg.max(frompos);
         let cur_iter = inner.iter_ids(start);
         SubCorpIdIter {
-            inner, ranges, ri,
+            inner,
+            ranges,
+            ri,
             cur_iter,
             remaining_in_range: rend - start,
         }
@@ -381,7 +419,7 @@ impl Iterator for SubCorpIdIter<'_> {
 
 /// Lazy merge-intersect of inner position iterator with ranges.
 struct FilteredRevIter<'a> {
-    inner: Box<dyn Iterator<Item=u64> + Send + Sync + 'a>,
+    inner: Box<dyn Iterator<Item = u64> + Send + Sync + 'a>,
     pairs: &'a [(u64, u64)],
     ri: usize,
 }
@@ -409,7 +447,10 @@ impl Iterator for FilteredRevIter<'_> {
                     while self.ri < self.pairs.len() && self.pairs[self.ri].1 <= pos {
                         self.ri += 1;
                     }
-                    if self.ri < self.pairs.len() && self.pairs[self.ri].0 <= pos && pos < self.pairs[self.ri].1 {
+                    if self.ri < self.pairs.len()
+                        && self.pairs[self.ri].0 <= pos
+                        && pos < self.pairs[self.ri].1
+                    {
                         return Some(pos);
                     }
                     // pos is in a gap, continue
@@ -419,9 +460,8 @@ impl Iterator for FilteredRevIter<'_> {
     }
 }
 
-
 /// Iterate all structures as (beg, end) pairs.
-pub fn struct_iter(s: &dyn structure::Struct) -> impl Iterator<Item=(u64, u64)> + '_ {
+pub fn struct_iter(s: &dyn structure::Struct) -> impl Iterator<Item = (u64, u64)> + '_ {
     struct_iter_from_pos(s, 0)
 }
 
@@ -459,7 +499,7 @@ impl Iterator for StructIterFromPos<'_> {
 pub fn struct_iter_from_pos(
     s: &dyn structure::Struct,
     from_pos: u64,
-) -> impl Iterator<Item=(u64, u64)> + '_ {
+) -> impl Iterator<Item = (u64, u64)> + '_ {
     let next_idx = struct_index_at_or_after_pos(s, from_pos).unwrap_or(s.len() as u64);
     StructIterFromPos {
         s,
@@ -526,7 +566,7 @@ impl Iterator for FilteredStructIterFromPos<'_> {
 pub fn filtered_struct_iter<'a>(
     s: &'a dyn structure::Struct,
     ranges: &'a Ranges,
-) -> impl Iterator<Item=(u64, u64)> + 'a {
+) -> impl Iterator<Item = (u64, u64)> + 'a {
     filtered_struct_iter_from_pos(s, ranges, 0)
 }
 
@@ -536,7 +576,7 @@ pub fn filtered_struct_iter_from_pos<'a>(
     s: &'a dyn structure::Struct,
     ranges: &'a Ranges,
     from_pos: u64,
-) -> impl Iterator<Item=(u64, u64)> + 'a {
+) -> impl Iterator<Item = (u64, u64)> + 'a {
     let mut it = FilteredStructIterFromPos {
         s,
         pairs: ranges.pairs(),

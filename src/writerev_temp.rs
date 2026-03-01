@@ -23,7 +23,10 @@ pub struct TempRevWriter {
 }
 
 impl TempRevWriter {
-    pub fn create(base: &Path, alignmult: usize) -> Result<TempRevWriter, Box<dyn std::error::Error>> {
+    pub fn create(
+        base: &Path,
+        alignmult: usize,
+    ) -> Result<TempRevWriter, Box<dyn std::error::Error>> {
         if alignmult == 0 {
             return Err("alignmult must be >= 1".into());
         }
@@ -128,7 +131,10 @@ impl TempRevWriter {
         }
         self.bw.delta(gap);
         self.last_pos = Some(pos);
-        self.current_count = self.current_count.checked_add(1).ok_or("rev count overflow")?;
+        self.current_count = self
+            .current_count
+            .checked_add(1)
+            .ok_or("rev count overflow")?;
         Ok(())
     }
 

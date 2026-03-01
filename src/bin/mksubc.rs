@@ -19,8 +19,14 @@ struct Args {
 
 #[derive(Debug)]
 enum Mode {
-    FromDefFile { def_file: String },
-    Direct { name: String, structure: String, spec: String },
+    FromDefFile {
+        def_file: String,
+    },
+    Direct {
+        name: String,
+        structure: String,
+        spec: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -74,7 +80,10 @@ fn parse_args() -> Result<Args, String> {
             }
             "-n" => {
                 if name.is_some() {
-                    return Err(format!("option -n specified multiple times\n{}", usage(&prog)));
+                    return Err(format!(
+                        "option -n specified multiple times\n{}",
+                        usage(&prog)
+                    ));
                 }
                 name = Some(
                     it.next()
@@ -151,7 +160,10 @@ fn parse_def_content(content: &str) -> Result<DefFile, String> {
         if let Some(rest) = line.strip_prefix('=') {
             let name = rest.trim();
             if name.is_empty() {
-                return Err(format!("line {}: missing subcorpus name after '='", line_no));
+                return Err(format!(
+                    "line {}: missing subcorpus name after '='",
+                    line_no
+                ));
             }
 
             let (struct_line_no, structure) =
@@ -272,8 +284,12 @@ fn build_subcorpus_ranges(
         let attr_slot = *attr_slots
             .get(&term.attr)
             .ok_or_else(|| format!("internal error: missing attribute slot '{}'", term.attr))?;
-        let ids = compile_term_ids(attrs[attr_slot].as_ref(), &term.pattern)
-            .map_err(|e| format!("failed to compile regex for '{}': {} ({e})", term.attr, term.pattern))?;
+        let ids = compile_term_ids(attrs[attr_slot].as_ref(), &term.pattern).map_err(|e| {
+            format!(
+                "failed to compile regex for '{}': {} ({e})",
+                term.attr, term.pattern
+            )
+        })?;
         compiled_terms.push(CompiledTerm { attr_slot, ids });
     }
 

@@ -15,9 +15,7 @@ pub struct Delta {
 }
 
 #[derive(Debug)]
-pub struct BigDelta {
-
-}
+pub struct BigDelta {}
 
 #[derive(Debug)]
 pub struct GigaDelta {
@@ -49,7 +47,7 @@ impl GigaDelta {
             offset: unsafe { MmapOptions::new().map(offset.file())? },
         };
 
-        let mut rb = bits::Reader::open(as_slice_ref(&gdt.text), 16*8);
+        let mut rb = bits::Reader::open(as_slice_ref(&gdt.text), 16 * 8);
 
         let _segment_size = rb.delta() - 1;
         gdt.positions = (rb.delta() - 1) as usize;
@@ -59,12 +57,18 @@ impl GigaDelta {
 
     pub fn at(&self, pos: u64) -> DeltaIter<'_> {
         let mut rest = pos % 64;
-        let seek = (as_slice_ref::<u16>(&self.offset))[pos as usize/64] as usize;
-        let seek = seek + 
-            ((as_slice_ref::<u32>(&self.segment))[pos as usize/(64*16)]) as usize * 2048*8;
+        let seek = (as_slice_ref::<u16>(&self.offset))[pos as usize / 64] as usize;
+        let seek = seek
+            + ((as_slice_ref::<u32>(&self.segment))[pos as usize / (64 * 16)]) as usize * 2048 * 8;
         let mut rb = bits::Reader::open(as_slice_ref(&self.text), seek as usize);
-        while rest != 0 { rb.delta(); rest -= 1; };
-        DeltaIter { remaining: self.positions as u64 - pos, rb }
+        while rest != 0 {
+            rb.delta();
+            rest -= 1;
+        }
+        DeltaIter {
+            remaining: self.positions as u64 - pos,
+            rb,
+        }
     }
 
     pub fn size(&self) -> usize {
@@ -73,16 +77,24 @@ impl GigaDelta {
 }
 
 impl Text for Delta {
-    fn posat(&self, pos: u64) -> Option<DeltaIter<'_>> { Some(self.at(pos)) }
-    fn structat(&self, _pos: u64) -> Option<IntIter<'_>> { None }
-    fn size(&self) -> usize { self.size() }
-    fn get(&self, pos: u64) -> u32 { self.at(pos).next().unwrap() }
+    fn posat(&self, pos: u64) -> Option<DeltaIter<'_>> {
+        Some(self.at(pos))
+    }
+    fn structat(&self, _pos: u64) -> Option<IntIter<'_>> {
+        None
+    }
+    fn size(&self) -> usize {
+        self.size()
+    }
+    fn get(&self, pos: u64) -> u32 {
+        self.at(pos).next().unwrap()
+    }
 }
 
 #[derive(Debug)]
 pub struct DeltaIter<'a> {
     pub remaining: u64,
-    pub rb: bits::Reader<'a>
+    pub rb: bits::Reader<'a>,
 }
 
 impl Iterator for DeltaIter<'_> {
@@ -91,7 +103,9 @@ impl Iterator for DeltaIter<'_> {
         if self.remaining > 0 {
             self.remaining -= 1;
             Some(self.rb.delta() as u32 - 1)
-        } else { None }
+        } else {
+            None
+        }
     }
 }
 
@@ -108,7 +122,7 @@ impl Delta {
             seg: unsafe { MmapOptions::new().map(seg.file())? },
         };
 
-        let mut rb = bits::Reader::open(as_slice_ref(&dt.text), 16*8);
+        let mut rb = bits::Reader::open(as_slice_ref(&dt.text), 16 * 8);
         dt.segment_size = (rb.delta() - 1) as usize;
         dt.positions = (rb.delta() - 1) as usize;
         Ok(dt)
@@ -119,8 +133,14 @@ impl Delta {
         let sp = segslice[pos as usize / self.segment_size];
         let mut rest = pos % self.segment_size as u64;
         let mut rb = bits::Reader::open(as_slice_ref(&self.text), sp as usize);
-        while rest != 0 { rb.delta(); rest -= 1; };
-        DeltaIter { remaining: self.positions as u64 - pos, rb }
+        while rest != 0 {
+            rb.delta();
+            rest -= 1;
+        }
+        DeltaIter {
+            remaining: self.positions as u64 - pos,
+            rb,
+        }
     }
 
     pub fn size(&self) -> usize {
@@ -129,10 +149,18 @@ impl Delta {
 }
 
 impl Text for GigaDelta {
-    fn posat(&self, pos: u64) -> Option<DeltaIter<'_>> { Some(self.at(pos)) }
-    fn structat(&self, _pos: u64) -> Option<IntIter<'_>> { None }
-    fn size(&self) -> usize { self.size() }
-    fn get(&self, pos: u64) -> u32 { self.at(pos).next().unwrap() }
+    fn posat(&self, pos: u64) -> Option<DeltaIter<'_>> {
+        Some(self.at(pos))
+    }
+    fn structat(&self, _pos: u64) -> Option<IntIter<'_>> {
+        None
+    }
+    fn size(&self) -> usize {
+        self.size()
+    }
+    fn get(&self, pos: u64) -> u32 {
+        self.at(pos).next().unwrap()
+    }
 }
 
 #[derive(Debug)]
@@ -178,7 +206,9 @@ impl Iterator for IntIter<'_> {
             let ret = Some(self.inttext.get(self.position as u64));
             self.position += 1;
             ret
-        } else { None }
+        } else {
+            None
+        }
     }
 }
 
@@ -189,7 +219,13 @@ impl Text for Int {
             inttext: &self,
         })
     }
-    fn posat(&self, _pos: u64) -> Option<DeltaIter<'_>> { None }
-    fn size(&self) -> usize { self.positions as usize }
-    fn get(&self, pos: u64) -> u32 { self.get(pos) }
+    fn posat(&self, _pos: u64) -> Option<DeltaIter<'_>> {
+        None
+    }
+    fn size(&self) -> usize {
+        self.positions as usize
+    }
+    fn get(&self, pos: u64) -> u32 {
+        self.get(pos)
+    }
 }

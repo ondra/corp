@@ -187,7 +187,11 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         (Some(base), _) => base.clone(),
         (None, Some(subcpath)) => {
             let resolved = resolve_subc_path(fullcorp.as_ref(), subcpath);
-            resolved.strip_suffix(".subc").unwrap_or(&resolved).to_string() + "."
+            resolved
+                .strip_suffix(".subc")
+                .unwrap_or(&resolved)
+                .to_string()
+                + "."
         }
         (None, None) => fullcorp.path.clone() + "/",
     };

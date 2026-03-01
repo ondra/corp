@@ -1,13 +1,13 @@
+use chrono::Utc;
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use chrono::Utc;
 
-use corp::corpconf::Block;
 use corp::corp::rebase_path;
+use corp::corpconf::Block;
 use corp::wrbits::BitsWriter;
 
 const TEXT_MAGIC: [u8; 6] = [0xa3, b'f', b'i', b'n', b'D', b'T'];
@@ -41,7 +41,10 @@ impl EncErr {
             eprintln!("line {}: warning: {}", line, msg);
         }
         if self.count == ENC_ERR_MAX - 1 && ENC_ERR_MAX != -1 {
-            eprintln!("There were already {} similar errors in the input", ENC_ERR_MAX);
+            eprintln!(
+                "There were already {} similar errors in the input",
+                ENC_ERR_MAX
+            );
             eprintln!("further errors will be suppressed and a summary will be");
             eprintln!("provided at the end of the compilation.");
             eprintln!("Use -v to emit all occurrences.");
@@ -55,7 +58,6 @@ impl EncErr {
         }
     }
 }
-
 
 struct LexWriter {
     base: PathBuf,
@@ -145,7 +147,10 @@ struct DeltaTextWriter {
 }
 
 impl DeltaTextWriter {
-    fn new(base: &Path, segment_size: usize) -> Result<DeltaTextWriter, Box<dyn std::error::Error>> {
+    fn new(
+        base: &Path,
+        segment_size: usize,
+    ) -> Result<DeltaTextWriter, Box<dyn std::error::Error>> {
         let mut f = BufWriter::new(File::create(add_suffix(base, ".text"))?);
         f.write_all(&TEXT_MAGIC)?;
         f.write_all(&[0u8; 10])?;
@@ -267,17 +272,24 @@ impl TextWriter for GigaDeltaTextWriter {
     fn push(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
         let i = self.count as usize;
         if i % (64 * 16) == 0 {
-            let bw = self.bw.as_ref().ok_or("gigadelta writer already finished")?;
+            let bw = self
+                .bw
+                .as_ref()
+                .ok_or("gigadelta writer already finished")?;
             let bitpos = self.data_start * 8 + bw.bits_written();
             let base_block = bitpos / (2048 * 8);
             if base_block > u32::MAX as u64 {
                 return Err("text segment offset overflow".into());
             }
-            self.segments.write_all(&(base_block as u32).to_le_bytes())?;
+            self.segments
+                .write_all(&(base_block as u32).to_le_bytes())?;
             self.seg_base_bits = base_block * (2048 * 8);
         }
         if i % 64 == 0 {
-            let bw = self.bw.as_ref().ok_or("gigadelta writer already finished")?;
+            let bw = self
+                .bw
+                .as_ref()
+                .ok_or("gigadelta writer already finished")?;
             let bitpos = self.data_start * 8 + bw.bits_written();
             let rel = bitpos - self.seg_base_bits;
             if rel > u16::MAX as u64 {
@@ -285,7 +297,10 @@ impl TextWriter for GigaDeltaTextWriter {
             }
             self.offsets.write_all(&(rel as u16).to_le_bytes())?;
         }
-        let bw = self.bw.as_mut().ok_or("gigadelta writer already finished")?;
+        let bw = self
+            .bw
+            .as_mut()
+            .ok_or("gigadelta writer already finished")?;
         bw.delta(id as u64 + 1);
         self.count += 1;
         Ok(())
@@ -361,7 +376,11 @@ impl AttrWriter {
             TextType::Int => Box::new(IntTextWriter::new(base)?),
             TextType::GigaDelta => Box::new(GigaDeltaTextWriter::new(base)?),
         };
-        Ok(AttrWriter { lex, text, default_value })
+        Ok(AttrWriter {
+            lex,
+            text,
+            default_value,
+        })
     }
 
     fn push_value(&mut self, value: &str, pos: u32) -> Result<(), Box<dyn std::error::Error>> {
@@ -370,7 +389,6 @@ impl AttrWriter {
         let _ = pos;
         Ok(())
     }
-
 }
 
 struct StructAttrWriter {
@@ -403,7 +421,6 @@ impl StructAttrWriter {
         self.text.push(id)?;
         Ok(())
     }
-
 }
 
 struct StructWriter {
@@ -423,8 +440,14 @@ struct OpenStruct {
 
 #[derive(Debug)]
 enum Tag {
-    Start { name: String, attrs: HashMap<String, String>, self_close: bool },
-    End { name: String },
+    Start {
+        name: String,
+        attrs: HashMap<String, String>,
+        self_close: bool,
+    },
+    End {
+        name: String,
+    },
 }
 
 fn parse_tag(line: &str) -> Option<Tag> {
@@ -453,7 +476,11 @@ fn parse_tag(line: &str) -> Option<Tag> {
     let name = parts.next()?.to_string();
     let attrs_str = content[name.len()..].trim();
     let attrs = parse_attrs(attrs_str);
-    Some(Tag::Start { name, attrs, self_close })
+    Some(Tag::Start {
+        name,
+        attrs,
+        self_close,
+    })
 }
 
 fn parse_attrs(mut s: &str) -> HashMap<String, String> {
@@ -579,14 +606,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "-".to_string()
     };
     if input_from_conf && input != "-" && !input.starts_with('|') {
-        input = rebase_path(
-            conf_path.to_str().ok_or("bad config path")?,
-            &input,
-        )?;
+        input = rebase_path(conf_path.to_str().ok_or("bad config path")?, &input)?;
     }
-    let out_path = conf
-        .value("PATH")
-        .ok_or("PATH not set in config")?;
+    let out_path = conf.value("PATH").ok_or("PATH not set in config")?;
     let out_path = rebase_path(conf_path.to_str().ok_or("bad config path")?, out_path)?;
     let out_path = PathBuf::from(out_path);
     fs::create_dir_all(&out_path)?;
@@ -608,7 +630,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or("===NONE===")
             .to_string();
         let base = out_path.join(name);
-        attrs.push(AttrWriter::new(name, &base, tt, segment_size, default_value)?);
+        attrs.push(AttrWriter::new(
+            name,
+            &base,
+            tt,
+            segment_size,
+            default_value,
+        )?);
     }
 
     let mut structs: HashMap<String, StructWriter> = HashMap::new();
@@ -618,7 +646,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut sattrs = Vec::new();
         for aname in sblock.attrnames_in_order() {
             let base = out_path.join(format!("{}.{}", sname, aname));
-            let ablock = sblock.attribute(aname).ok_or("structure attribute not found")?;
+            let ablock = sblock
+                .attribute(aname)
+                .ok_or("structure attribute not found")?;
             let default_value = ablock
                 .value("DEFAULTVALUE")
                 .unwrap_or("===NONE===")
@@ -651,7 +681,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .arg(cmd)
             .stdout(Stdio::piped())
             .spawn()?;
-        let stdout = child.stdout.take().ok_or("failed to capture command stdout")?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or("failed to capture command stdout")?;
         command_child = Some(child);
         Box::new(BufReader::new(stdout))
     } else if input == "-" {
@@ -694,7 +727,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut handled_tag = false;
         if let Some(tag) = parse_tag(line) {
             match tag {
-                Tag::Start { name, attrs: tag_attrs, self_close } => {
+                Tag::Start {
+                    name,
+                    attrs: tag_attrs,
+                    self_close,
+                } => {
                     if let Some(sb) = structs.get_mut(&name) {
                         if let Some(pend_pos) = sb.pending_empty_pos {
                             if pend_pos != pos as u64 {
@@ -732,10 +769,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     sb.pending_empty_pos = None;
                                     sb.pending_empty_vals = None;
                                 }
-                                open_structs
-                                    .entry(name)
-                                    .or_default()
-                                    .push(OpenStruct { start: pos as u64, attr_values });
+                                open_structs.entry(name).or_default().push(OpenStruct {
+                                    start: pos as u64,
+                                    attr_values,
+                                });
                                 handled_tag = true;
                             }
                         }
@@ -750,38 +787,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         }
-                            let open = match open_structs.get_mut(&name).and_then(|opens| opens.pop()) {
-                                Some(v) => v,
-                                None => {
-                                    err_closing_str.emit(
-                                        lineno,
-                                        &format!("closing non opened structure ({})", name),
-                                    );
-                                    continue;
-                                }
-                            };
-                            let sb = structs.get_mut(&name).unwrap();
-                            if let Some(pend_pos) = sb.pending_empty_pos {
-                                if pend_pos != pos as u64 {
-                                    flush_pending_empty(sb)?;
-                                }
+                        let open = match open_structs.get_mut(&name).and_then(|opens| opens.pop()) {
+                            Some(v) => v,
+                            None => {
+                                err_closing_str.emit(
+                                    lineno,
+                                    &format!("closing non opened structure ({})", name),
+                                );
+                                continue;
                             }
-                            let beg = open.start;
-                            let end = pos as u64;
-                            if sb.type64 {
-                                sb.rng.write_all(&beg.to_le_bytes())?;
-                                sb.rng.write_all(&end.to_le_bytes())?;
-                            } else {
-                                sb.rng.write_all(&(beg as u32).to_le_bytes())?;
-                                sb.rng.write_all(&(end as u32).to_le_bytes())?;
+                        };
+                        let sb = structs.get_mut(&name).unwrap();
+                        if let Some(pend_pos) = sb.pending_empty_pos {
+                            if pend_pos != pos as u64 {
+                                flush_pending_empty(sb)?;
                             }
-                            let struct_pos = sb.count;
-                            sb.count = sb.count.checked_add(1).ok_or("structure count overflow")?;
-                            for (attr, val) in sb.attrs.iter_mut().zip(open.attr_values.iter()) {
-                                let id = attr.id_for(val)?;
-                                attr.push_value(id, struct_pos)?;
-                            }
-                            handled_tag = true;
+                        }
+                        let beg = open.start;
+                        let end = pos as u64;
+                        if sb.type64 {
+                            sb.rng.write_all(&beg.to_le_bytes())?;
+                            sb.rng.write_all(&end.to_le_bytes())?;
+                        } else {
+                            sb.rng.write_all(&(beg as u32).to_le_bytes())?;
+                            sb.rng.write_all(&(end as u32).to_le_bytes())?;
+                        }
+                        let struct_pos = sb.count;
+                        sb.count = sb.count.checked_add(1).ok_or("structure count overflow")?;
+                        for (attr, val) in sb.attrs.iter_mut().zip(open.attr_values.iter()) {
+                            let id = attr.id_for(val)?;
+                            attr.push_value(id, struct_pos)?;
+                        }
+                        handled_tag = true;
                     }
                 }
             }

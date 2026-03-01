@@ -1,12 +1,12 @@
 use fs_err::File;
-use std::io::Read;
 use std::fmt;
+use std::io::Read;
 
 use crate::corpconf;
 use crate::lex;
-use crate::text;
 use crate::rev;
 use crate::structure;
+use crate::text;
 use crate::virtual_corp;
 
 use crate::text::Text;
@@ -25,25 +25,40 @@ pub struct StdAttr {
     pub rev: Box<dyn rev::Rev + Sync + Send>,
 }
 
-pub fn open_freq(base: &str, kind: &str) -> Result<Box<dyn Frequency + Send + Sync>, Box<dyn std::error::Error>> {
+pub fn open_freq(
+    base: &str,
+    kind: &str,
+) -> Result<Box<dyn Frequency + Send + Sync>, Box<dyn std::error::Error>> {
     if kind.contains(":") {
         let mut parts = kind.split(":");
-        let ext = parts.next().ok_or(format!("bad frequency kind: {}", kind))?;
-        let datatype = parts.next().ok_or(format!("bad frequency kind: {}", kind))?;
+        let ext = parts
+            .next()
+            .ok_or(format!("bad frequency kind: {}", kind))?;
+        let datatype = parts
+            .next()
+            .ok_or(format!("bad frequency kind: {}", kind))?;
         match datatype {
-            "l" => Ok(Box::new(FromFile::<u64>::open(&(base.to_string() + "." + ext))?)),
+            "l" => Ok(Box::new(FromFile::<u64>::open(
+                &(base.to_string() + "." + ext),
+            )?)),
             _ => Err(format!("bad frequency type: {}", kind).into()),
         }
-    } else { match kind {
-        "frq" => {
-            if std::path::Path::new(&(base.to_string() + ".frq64")).exists() {
-                Ok(Box::new(FromFile::<u64>::open(&(base.to_string() + ".frq64"))?))
-            } else {
-                Ok(Box::new(FromFile::<u32>::open(&(base.to_string() + ".frq"))?))
+    } else {
+        match kind {
+            "frq" => {
+                if std::path::Path::new(&(base.to_string() + ".frq64")).exists() {
+                    Ok(Box::new(FromFile::<u64>::open(
+                        &(base.to_string() + ".frq64"),
+                    )?))
+                } else {
+                    Ok(Box::new(FromFile::<u32>::open(
+                        &(base.to_string() + ".frq"),
+                    )?))
+                }
             }
-        },
-        _ => Err(format!("bad frequency type: {}", kind).into()),
-    }}
+            _ => Err(format!("bad frequency type: {}", kind).into()),
+        }
+    }
 }
 
 struct FromFile<T> {
@@ -51,20 +66,31 @@ struct FromFile<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
-impl <T> FromFile<T> where T: Copy {
+impl<T> FromFile<T>
+where
+    T: Copy,
+{
     fn open(path: &str) -> Result<FromFile<T>, Box<dyn std::error::Error>> {
         let f = File::open(path)?;
-        Ok(FromFile::<T>{
+        Ok(FromFile::<T> {
             map: unsafe { memmap::MmapOptions::new().map(f.file())? },
             //_marker: Default::default(),
             _marker: std::marker::PhantomData,
         })
     }
-    fn at(&self, id: u32) -> T { as_slice_ref(&self.map)[id as usize] }
+    fn at(&self, id: u32) -> T {
+        as_slice_ref(&self.map)[id as usize]
+    }
 }
 
-impl <T> Frequency for FromFile<T> where T: Copy, u64: From<T> {
-    fn frq(&self, id: u32) -> u64 { self.at(id).into() }
+impl<T> Frequency for FromFile<T>
+where
+    T: Copy,
+    u64: From<T>,
+{
+    fn frq(&self, id: u32) -> u64 {
+        self.at(id).into()
+    }
 }
 
 #[derive(Debug)]
@@ -81,36 +107,52 @@ pub struct DynAttr<'a> {
 }
 
 pub trait Attr: std::fmt::Debug + Sync + Send {
-    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_>;
+    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item = u32> + '_>;
     fn id2str(&self, id: u32) -> &str;
     fn str2id(&self, s: &str) -> Option<u32>;
     fn revidx(&self) -> &dyn rev::Rev;
     fn text(&self) -> &dyn text::Text;
     fn id_range(&self) -> u32;
-    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>>;
+    fn get_freq(
+        &self,
+        t: &str,
+    ) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>>;
 }
 
 impl dyn Attr + Send + Sync + '_ {
-    pub fn id2poss_sampler<'a>(
-        &'a self,
-        nsamples: Option<usize>,
-    ) -> Id2PossSampler<'a> {
+    pub fn id2poss_sampler<'a>(&'a self, nsamples: Option<usize>) -> Id2PossSampler<'a> {
         Id2PossSampler::new(self, nsamples)
     }
 }
 
 impl Attr for StdAttr {
-    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_> {
+    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item = u32> + '_> {
         let pa = self.text.posat(frompos);
-        if pa.is_some() { Box::new(pa.unwrap()) }
-        else { Box::new(self.text.structat(frompos).unwrap()) }
+        if pa.is_some() {
+            Box::new(pa.unwrap())
+        } else {
+            Box::new(self.text.structat(frompos).unwrap())
+        }
     }
-    fn id2str(&self, id: u32) -> &str { self.lex.id2str(id) }
-    fn str2id(&self, s: &str) -> Option<u32> { self.lex.str2id(s) }
-    fn revidx(&self) -> &dyn rev::Rev { self.rev.as_ref() }
-    fn text(&self) -> &dyn text::Text { self.text.as_ref() }
-    fn id_range(&self) -> u32 { self.lex.id_range() }
-    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
+    fn id2str(&self, id: u32) -> &str {
+        self.lex.id2str(id)
+    }
+    fn str2id(&self, s: &str) -> Option<u32> {
+        self.lex.str2id(s)
+    }
+    fn revidx(&self) -> &dyn rev::Rev {
+        self.rev.as_ref()
+    }
+    fn text(&self) -> &dyn text::Text {
+        self.text.as_ref()
+    }
+    fn id_range(&self) -> u32 {
+        self.lex.id_range()
+    }
+    fn get_freq(
+        &self,
+        t: &str,
+    ) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
         match t {
             "frq" => Ok(Box::new(RevFrequency { a: &self })),
             _ => open_freq(&self.path, t),
@@ -119,7 +161,7 @@ impl Attr for StdAttr {
 }
 
 struct DynIter<'iter, 'attr> {
-    di: Box<dyn Iterator<Item=u32> + 'iter>,
+    di: Box<dyn Iterator<Item = u32> + 'iter>,
     da: &'iter DynAttr<'attr>,
 }
 
@@ -128,24 +170,39 @@ impl Iterator for DynIter<'_, '_> {
     fn next(&mut self) -> Option<u32> {
         if let Some(orgid) = self.di.next() {
             Some(as_slice_ref(&self.da.ridx)[orgid as usize])
-        } else { None }
+        } else {
+            None
+        }
     }
 }
 
 impl Attr for DynAttr<'_> {
-    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item=u32> + '_> {
+    fn iter_ids(&self, frompos: u64) -> Box<dyn Iterator<Item = u32> + '_> {
         let it = self.fromattr.iter_ids(frompos);
         Box::new(DynIter { di: it, da: self })
         //Box::new(vec![1u32, 2, 3].into_iter())
     }
-    fn id2str(&self, id: u32) -> &str { self.lex.id2str(id) }
-    fn str2id(&self, s: &str) -> Option<u32> { self.lex.str2id(s) }
-    fn revidx(&self) -> &dyn rev::Rev { self.fromattr.revidx() }
-    fn text(&self) -> &dyn text::Text { return self }
-    fn id_range(&self) -> u32 { self.lex.id_range() }
-    fn get_freq(&self, t: &str) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
+    fn id2str(&self, id: u32) -> &str {
+        self.lex.id2str(id)
+    }
+    fn str2id(&self, s: &str) -> Option<u32> {
+        self.lex.str2id(s)
+    }
+    fn revidx(&self) -> &dyn rev::Rev {
+        self.fromattr.revidx()
+    }
+    fn text(&self) -> &dyn text::Text {
+        return self;
+    }
+    fn id_range(&self) -> u32 {
+        self.lex.id_range()
+    }
+    fn get_freq(
+        &self,
+        t: &str,
+    ) -> Result<Box<dyn Frequency + Send + Sync + '_>, Box<dyn std::error::Error>> {
         match t {
-            "frq" => Ok(Box::new(DynFrequency{
+            "frq" => Ok(Box::new(DynFrequency {
                 da: self,
                 base_freq: self.fromattr.get_freq("frq")?,
             })),
@@ -155,10 +212,18 @@ impl Attr for DynAttr<'_> {
 }
 
 impl Text for DynAttr<'_> {
-    fn posat(&self, _pos: u64) -> Option<text::DeltaIter<'_>> { panic!() }
-    fn structat(&self, _pos: u64) -> Option<text::IntIter<'_>> { panic!() }
-    fn size(&self) -> usize { self.fromattr.text().size() }
-    fn get(&self, pos: u64) -> u32 { as_slice_ref(&self.ridx)[self.fromattr.text().get(pos) as usize] }
+    fn posat(&self, _pos: u64) -> Option<text::DeltaIter<'_>> {
+        panic!()
+    }
+    fn structat(&self, _pos: u64) -> Option<text::IntIter<'_>> {
+        panic!()
+    }
+    fn size(&self) -> usize {
+        self.fromattr.text().size()
+    }
+    fn get(&self, pos: u64) -> u32 {
+        as_slice_ref(&self.ridx)[self.fromattr.text().get(pos) as usize]
+    }
 }
 
 pub trait Frequency {
@@ -179,9 +244,13 @@ impl Frequency for DynFrequency<'_, '_> {
     }
 }
 
-struct RevFrequency<'a> { pub a: &'a StdAttr, }
+struct RevFrequency<'a> {
+    pub a: &'a StdAttr,
+}
 impl Frequency for RevFrequency<'_> {
-    fn frq(&self, id: u32) -> u64 { self.a.rev.count(id) }
+    fn frq(&self, id: u32) -> u64 {
+        self.a.rev.count(id)
+    }
 }
 
 #[derive(Debug)]
@@ -222,16 +291,19 @@ fn get_registry_paths() -> Vec<String> {
         .split(":")
         .filter(|s| !s.is_empty())
         .chain(FALLBACK_MANATEE_REGISTRY)
-        .map(|s| {s.to_string()})
+        .map(|s| s.to_string())
         .collect::<Vec<String>>()
 }
 
 fn find_config(corpname: &str) -> Result<String, Box<dyn std::error::Error>> {
-    if corpname.starts_with(".") { // cwd-relative path
+    if corpname.starts_with(".") {
+        // cwd-relative path
         Ok(corpname.to_string())
-    } else if corpname.starts_with("/") { // absolute path, do nothing
+    } else if corpname.starts_with("/") {
+        // absolute path, do nothing
         Ok(corpname.to_string())
-    } else { // name relative to MANATEE_REGISTRY
+    } else {
+        // name relative to MANATEE_REGISTRY
         for path in get_registry_paths() {
             let fullpath = std::path::Path::new(&path).join(corpname);
             if fullpath.is_file() {
@@ -249,7 +321,7 @@ impl Corpus {
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
         let conf = corpconf::parse_conf_opt(&buf)?;
-        let path = rebase_path(&conf_filename, conf.value("PATH").ok_or(AttrNotFound{})?)?;
+        let path = rebase_path(&conf_filename, conf.value("PATH").ok_or(AttrNotFound {})?)?;
         let path = path.trim_end_matches('/').to_string() + "/";
 
         let (segments, layout) = if let Some(virtdef_path) = conf.value("VIRTUAL") {
@@ -274,7 +346,13 @@ impl Corpus {
             (None, None)
         };
 
-        Ok(Corpus{ path, name: conf_filename, conf, segments, layout })
+        Ok(Corpus {
+            path,
+            name: conf_filename,
+            conf,
+            segments,
+            layout,
+        })
     }
 
     pub fn rebase_path(&self, path: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -284,15 +362,21 @@ impl Corpus {
     fn get_attrconf(&self, name: &str) -> Result<&corpconf::Block, Box<dyn std::error::Error>> {
         Ok(if name.contains('.') {
             let mut parts = name.split('.');
-            let structconf = self.conf.structure(parts.next().unwrap())
-                .ok_or(AttrNotFound{})?;
+            let structconf = self
+                .conf
+                .structure(parts.next().unwrap())
+                .ok_or(AttrNotFound {})?;
             structconf.attribute(parts.next().unwrap())
         } else {
             self.conf.attribute(name)
-        }.ok_or(AttrNotFound{})?)
+        }
+        .ok_or(AttrNotFound {})?)
     }
 
-    pub fn get_text_storage_type<'a>(&'a self, name: &'_ str) -> Result<&'a str, Box<dyn std::error::Error>> {
+    pub fn get_text_storage_type<'a>(
+        &'a self,
+        name: &'_ str,
+    ) -> Result<&'a str, Box<dyn std::error::Error>> {
         let attrconf = self.get_attrconf(&name)?;
         Ok(if name.contains('.') {
             attrconf.value("TYPE").unwrap_or("Int")
@@ -301,8 +385,10 @@ impl Corpus {
         })
     }
 
-    pub fn open_attribute<'a>(&'a self, name: &str) -> Result<Box<dyn Attr + Sync + Send + 'a>, Box<dyn std::error::Error>>
-    {
+    pub fn open_attribute<'a>(
+        &'a self,
+        name: &str,
+    ) -> Result<Box<dyn Attr + Sync + Send + 'a>, Box<dyn std::error::Error>> {
         if let (Some(segments), Some(layout)) = (&self.segments, &self.layout) {
             return Ok(Box::new(virtual_corp::VirtualAttr::open(
                 self.path.trim_end_matches('/'),
@@ -316,10 +402,9 @@ impl Corpus {
         let attrconf = self.get_attrconf(&name)?;
 
         if let Some(_dynamic) = attrconf.value("DYNAMIC") {
-            let fromattrname = attrconf.value("FROMATTR").ok_or(AttrNotFound{})?;
+            let fromattrname = attrconf.value("FROMATTR").ok_or(AttrNotFound {})?;
             let fromattr = if name.contains(".") {
-                let fa = name.split(".").next().unwrap().to_string()
-                    + "." + fromattrname;
+                let fa = name.split(".").next().unwrap().to_string() + "." + fromattrname;
                 self.open_attribute(&fa)
             } else {
                 self.open_attribute(fromattrname)
@@ -328,7 +413,7 @@ impl Corpus {
             let ridxf = File::open(path.clone() + ".lex.ridx")?;
             // let frqf = File::open(path.clone() + ".frq")?;
 
-            Ok(Box::new(DynAttr{
+            Ok(Box::new(DynAttr {
                 path,
                 name: name.to_string(),
                 conf: attrconf.clone(),
@@ -340,56 +425,56 @@ impl Corpus {
                 lrev: rev::open(&(self.path.clone() + "/" + name))?,
             }))
         } else {
-            Ok(Box::new(StdAttr{
+            Ok(Box::new(StdAttr {
                 path,
                 name: name.to_string(),
                 conf: attrconf.clone(),
                 lex: lex::MapLex::open(&(self.path.clone() + "/" + name))?,
                 text: self.open_text(
                     &(self.path.clone() + "/" + name),
-                    self.get_text_storage_type(name)?)?,
+                    self.get_text_storage_type(name)?,
+                )?,
                 rev: rev::open(&(self.path.clone() + "/" + name))?,
             }))
         }
     }
 
-    pub fn open_text<'a>(&self, path: &str, typecode: &str)
-        -> Result<Box<dyn text::Text + Sync + Send + 'a>, Box<dyn std::error::Error>>
-    {
+    pub fn open_text<'a>(
+        &self,
+        path: &str,
+        typecode: &str,
+    ) -> Result<Box<dyn text::Text + Sync + Send + 'a>, Box<dyn std::error::Error>> {
         match typecode {
-            "MD_MD" | "FD_FD" | "FD_MD"
-                => Ok(Box::new(text::Delta::open(path)?)),
-            "MD_MGD" | "FD_FGD" | "FD_MGD"
-                => Ok(Box::new(text::GigaDelta::open(path)?)),
-            "Int"
-                => Ok(Box::new(text::Int::open(path)?)),
-            _ => Err(Box::new(AttrNotFound{}))
+            "MD_MD" | "FD_FD" | "FD_MD" => Ok(Box::new(text::Delta::open(path)?)),
+            "MD_MGD" | "FD_FGD" | "FD_MGD" => Ok(Box::new(text::GigaDelta::open(path)?)),
+            "Int" => Ok(Box::new(text::Int::open(path)?)),
+            _ => Err(Box::new(AttrNotFound {})),
         }
     }
 
-    pub fn open_struct<'a>(&'a self, name: &str)
-        -> Result<Box<dyn structure::Struct + Sync + Send + 'a>, Box<dyn std::error::Error>>
-    {
+    pub fn open_struct<'a>(
+        &'a self,
+        name: &str,
+    ) -> Result<Box<dyn structure::Struct + Sync + Send + 'a>, Box<dyn std::error::Error>> {
         if let (Some(segments), Some(layout)) = (&self.segments, &self.layout) {
             return Ok(Box::new(virtual_corp::VirtualStruct::open(
-                layout,
-                segments,
-                name,
+                layout, segments, name,
             )?));
         }
 
-        let s = self.conf.structure(name).ok_or(AttrNotFound{})?;
+        let s = self.conf.structure(name).ok_or(AttrNotFound {})?;
         let type64 = matches!(s.value("TYPE"), Some("file64") | Some("map64"));
-        structure::open(
-            &(self.path.clone() + "/" + name),
-            type64
-        )
+        structure::open(&(self.path.clone() + "/" + name), type64)
     }
 
-    pub fn open_structtext<'a>(&self, structname: &str, attrname: &str)
-        -> Result<text::Int, Box<dyn std::error::Error>>
-    {
-        Ok(text::Int::open(&(self.path.clone() + "/" + structname + "." + attrname))?)
+    pub fn open_structtext<'a>(
+        &self,
+        structname: &str,
+        attrname: &str,
+    ) -> Result<text::Int, Box<dyn std::error::Error>> {
+        Ok(text::Int::open(
+            &(self.path.clone() + "/" + structname + "." + attrname),
+        )?)
     }
 
     pub fn get_conf(&self, name: &str) -> Option<String> {
@@ -399,39 +484,49 @@ impl Corpus {
             }
         }
         match name {
-            "WSATTR" => {
-                ["lempos_lc","lempos","lemma_lc","lemma"]
-                .iter().find(
-                    |a| self.conf.attribute(a).is_some()
-                ).map(|x|x.to_string())
-                .or_else(|| self.get_conf("DEFAULTATTR"))
-            },
+            "WSATTR" => ["lempos_lc", "lempos", "lemma_lc", "lemma"]
+                .iter()
+                .find(|a| self.conf.attribute(a).is_some())
+                .map(|x| x.to_string())
+                .or_else(|| self.get_conf("DEFAULTATTR")),
             "DEFAULTATTR" => Some("word".to_string()),
-            "WSBASE" => Some(self.path.to_string()
-                             + &self.get_conf("WSATTR").unwrap() + "-ws"),
+            "WSBASE" => Some(self.path.to_string() + &self.get_conf("WSATTR").unwrap() + "-ws"),
             _ => None,
-        }.map(|val| {
-            match name {
-                "WSBASE" => self.rebase_path(&val).unwrap(),
-                _ => val,
-            }
+        }
+        .map(|val| match name {
+            "WSBASE" => self.rebase_path(&val).unwrap(),
+            _ => val,
         })
     }
 }
 
 pub trait CorpusLike {
-    fn open_attribute(&self, name: &str) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>>;
-    fn open_struct(&self, name: &str) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>>;
+    fn open_attribute(
+        &self,
+        name: &str,
+    ) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>>;
+    fn open_struct(
+        &self,
+        name: &str,
+    ) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>>;
     fn get_conf(&self, name: &str) -> Option<String>;
     fn search_size(&self) -> u64;
-    fn subcorp(&self) -> Option<&crate::subcorp::Ranges> { None }
+    fn subcorp(&self) -> Option<&crate::subcorp::Ranges> {
+        None
+    }
 }
 
 impl CorpusLike for Corpus {
-    fn open_attribute(&self, name: &str) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>> {
+    fn open_attribute(
+        &self,
+        name: &str,
+    ) -> Result<Box<dyn Attr + Sync + Send + '_>, Box<dyn std::error::Error>> {
         Corpus::open_attribute(self, name)
     }
-    fn open_struct(&self, name: &str) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>> {
+    fn open_struct(
+        &self,
+        name: &str,
+    ) -> Result<Box<dyn structure::Struct + Sync + Send + '_>, Box<dyn std::error::Error>> {
         Corpus::open_struct(self, name)
     }
     fn get_conf(&self, name: &str) -> Option<String> {

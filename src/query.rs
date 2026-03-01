@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, take_while, take_while_m_n};
-use nom::combinator::{all_consuming, map, recognize};
-use nom::error::{convert_error, ParseError, VerboseError};
-use nom::multi::fold_many0;
 use nom::character::complete::anychar;
+use nom::combinator::{all_consuming, map, recognize};
+use nom::error::{ParseError, VerboseError, convert_error};
+use nom::multi::fold_many0;
 use nom::sequence::{delimited, preceded, tuple};
 use nom::{Finish, IResult};
 

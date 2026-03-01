@@ -101,7 +101,9 @@ impl DenseRevWriter {
         }
         self.bw.delta(gap);
         self.last_pos = Some(pos);
-        let idx = self.current_idx.ok_or("dense writer internal state error")?;
+        let idx = self
+            .current_idx
+            .ok_or("dense writer internal state error")?;
         self.counts[idx] = self.counts[idx]
             .checked_add(1)
             .ok_or("rev count overflow")?;

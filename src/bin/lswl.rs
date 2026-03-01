@@ -135,14 +135,7 @@ fn run_with_corpus(corpus: &dyn CorpusLike, args: &Args) -> Result<(), Box<dyn s
     let mut heap = BinaryHeap::<Reverse<HeapItem>>::new();
     for id in 0..attr.id_range() {
         let freq = sortfreq.frq(id);
-        keep_top(
-            &mut heap,
-            id,
-            freq,
-            args.limit,
-            args.minfreq,
-            args.maxfreq,
-        );
+        keep_top(&mut heap, id, freq, args.limit, args.minfreq, args.maxfreq);
     }
 
     let mut out = Vec::<HeapItem>::with_capacity(heap.len());

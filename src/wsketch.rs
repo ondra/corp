@@ -3,8 +3,8 @@
 use crate::bits;
 use crate::util::as_slice_ref;
 
-use crate::lex::MapLex;
 use crate::corp::Attr;
+use crate::lex::MapLex;
 
 use std::fmt;
 use std::fmt::Write;
@@ -34,11 +34,11 @@ impl WMap {
         let revf = fs_err::File::open(base.to_string() + ".rev")?;
         let map0idxf = fs_err::File::open(base.to_string() + ".map0.idx")?;
 
-        let open_level = |levelno| -> std::result::Result<memmap::Mmap, Box<dyn std::error::Error>> {
-            let lf = fs_err::File::open(
-                format!("{}.map{}.com", base, levelno))?;
-            Ok(unsafe { memmap::MmapOptions::new().map(lf.file())? })
-        };
+        let open_level =
+            |levelno| -> std::result::Result<memmap::Mmap, Box<dyn std::error::Error>> {
+                let lf = fs_err::File::open(format!("{}.map{}.com", base, levelno))?;
+                Ok(unsafe { memmap::MmapOptions::new().map(lf.file())? })
+            };
         let levels = [open_level(0)?, open_level(1)?, open_level(2)?];
         let mut _levelsizes = [0usize, 0, 0];
         let mut version = 4u32;
@@ -48,10 +48,10 @@ impl WMap {
         let mut has_ftt = false;
         let mut adjust_idx = false;
         let mut min_sc = -10f32;
-        let mut norm_sc = (1<<12) as f32 / 30f32;
+        let mut norm_sc = (1 << 12) as f32 / 30f32;
 
         for i in 0..3 {
-            let mut rb = bits::Reader::open(as_slice_ref(&levels[i]), 16*8);
+            let mut rb = bits::Reader::open(as_slice_ref(&levels[i]), 16 * 8);
             _levelsizes[i] = rb.delta() as usize;
 
             match i {
@@ -61,21 +61,21 @@ impl WMap {
                     if version > 4 {
                         final_id1 = final_id1.wrapping_sub(1u32);
                     }
-                },
-                1 => {},
+                }
+                1 => {}
                 2 => {
                     has_commonest = rb.bit();
                     adjust_idx = rb.bit();
                     if adjust_idx {
                         let sc_bits = rb.delta();
                         let max_sc = rb.delta() as f32;
-                        min_sc = -((rb.delta() -1) as f32);
+                        min_sc = -((rb.delta() - 1) as f32);
                         norm_sc = (1 << sc_bits) as f32 / (max_sc - min_sc);
                     }
                     if version > 5 {
                         has_ftt = rb.bit();
                     }
-                },
+                }
                 _ => panic!(),
             }
         }
@@ -84,8 +84,15 @@ impl WMap {
             name: base.to_string(),
             map0idx: unsafe { memmap::MmapOptions::new().map(map0idxf.file())? },
             rev: WMapRev::new(revm),
-            levels, _levelsizes, final_id1, has_commonest,
-            has_ftt, adjust_idx, min_sc, norm_sc, version
+            levels,
+            _levelsizes,
+            final_id1,
+            has_commonest,
+            has_ftt,
+            adjust_idx,
+            min_sc,
+            norm_sc,
+            version,
         })
     }
 
@@ -101,33 +108,37 @@ impl WMap {
     fn iter_from(&self, pos: u32) -> WMapIter1<'_> {
         WMapIter1 {
             wmap: self,
-            rb: bits::Reader::open(
-                as_slice_ref(&self.levels[0]), pos as usize),
-            idx: 0, id: 0
+            rb: bits::Reader::open(as_slice_ref(&self.levels[0]), pos as usize),
+            idx: 0,
+            id: 0,
         }
     }
 
     pub fn find_id(&self, id: u32) -> Option<WMapItem1<'_>> {
         let bs = self.get_block_seek(id);
         for v in self.iter_from(bs) {
-            if v.id < id { continue; }
-            else if v.id == id { return Some(v); }
-            else { return None; }
+            if v.id < id {
+                continue;
+            } else if v.id == id {
+                return Some(v);
+            } else {
+                return None;
+            }
         }
         None
     }
 
     pub fn iter_ids(&self) -> WMapIter1<'_> {
-        WMapIter1{
+        WMapIter1 {
             wmap: self,
-            rb: bits::Reader::open(as_slice_ref(&self.levels[0]), 32*8),
-            idx: 0, id: 0
+            rb: bits::Reader::open(as_slice_ref(&self.levels[0]), 32 * 8),
+            idx: 0,
+            id: 0,
         }
     }
 }
 
-fn read_record(rb: &mut bits::Reader<'_>,
-               idx: &mut usize, id: &mut u32, adjust_idx: bool) {
+fn read_record(rb: &mut bits::Reader<'_>, idx: &mut usize, id: &mut u32, adjust_idx: bool) {
     let add = rb.delta();
     if add > 1 {
         *idx += add as usize;
@@ -144,42 +155,61 @@ fn read_record(rb: &mut bits::Reader<'_>,
     }
 }
 
-
 // Level 1
 
 #[derive(Debug)]
-pub struct WMapItem1<'a> { wmap: &'a WMap,
-    pub id: u32, pub idx: usize, pub cnt: u64, pub frq: u64 }
+pub struct WMapItem1<'a> {
+    wmap: &'a WMap,
+    pub id: u32,
+    pub idx: usize,
+    pub cnt: u64,
+    pub frq: u64,
+}
 impl fmt::Display for WMapItem1<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(1 id:{} seek:{} cnt:{} frq:{})", self.id, self.idx, self.cnt, self.frq)
+        write!(
+            f,
+            "(1 id:{} seek:{} cnt:{} frq:{})",
+            self.id, self.idx, self.cnt, self.frq
+        )
     }
 }
 
-pub struct WMapIter1<'a> { wmap: &'a WMap,
+pub struct WMapIter1<'a> {
+    wmap: &'a WMap,
     rb: bits::Reader<'a>,
-    id: u32, idx: usize }
+    id: u32,
+    idx: usize,
+}
 
-impl <'a> Iterator for WMapIter1<'a> {
+impl<'a> Iterator for WMapIter1<'a> {
     type Item = WMapItem1<'a>;
     fn next(&mut self) -> Option<WMapItem1<'a>> {
-        if self.id >= self.wmap.final_id1 { return None }
+        if self.id >= self.wmap.final_id1 {
+            return None;
+        }
         let adjust_idx = false;
         read_record(&mut self.rb, &mut self.idx, &mut self.id, adjust_idx);
         let cnt = self.rb.delta() as u64;
         let frq = self.rb.delta() as u64;
-        Some(WMapItem1 { wmap: self.wmap,
-            id: self.id, idx: self.idx, cnt, frq })
+        Some(WMapItem1 {
+            wmap: self.wmap,
+            id: self.id,
+            idx: self.idx,
+            cnt,
+            frq,
+        })
     }
 }
 
 impl WMapItem1<'_> {
     pub fn iter(&self) -> WMapIter2<'_> {
         WMapIter2 {
-            wmap: self.wmap, 
+            wmap: self.wmap,
             rb: bits::Reader::open(as_slice_ref(&self.wmap.levels[1]), self.idx),
             remaining: self.cnt as usize,
-            id: 0, idx: 0
+            id: 0,
+            idx: 0,
         }
     }
 }
@@ -187,87 +217,122 @@ impl WMapItem1<'_> {
 // Level 2
 
 #[derive(Debug)]
-pub struct WMapItem2<'a> { wmap: &'a WMap,
-    pub id: u32, pub idx: usize, pub cnt: u64, pub frq: u64, pub rnk: f32 }
+pub struct WMapItem2<'a> {
+    wmap: &'a WMap,
+    pub id: u32,
+    pub idx: usize,
+    pub cnt: u64,
+    pub frq: u64,
+    pub rnk: f32,
+}
 impl fmt::Display for WMapItem2<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(2 id:{} seek:{} cnt:{} frq:{} rnk:{})", self.id, self.idx, self.cnt, self.frq, self.rnk)
+        write!(
+            f,
+            "(2 id:{} seek:{} cnt:{} frq:{} rnk:{})",
+            self.id, self.idx, self.cnt, self.frq, self.rnk
+        )
     }
 }
 pub struct WMapIter2<'a> {
     wmap: &'a WMap,
     rb: bits::Reader<'a>,
-    id: u32, idx: usize,
+    id: u32,
+    idx: usize,
     remaining: usize,
 }
 
-impl <'a> Iterator for WMapIter2<'a> {
+impl<'a> Iterator for WMapIter2<'a> {
     type Item = WMapItem2<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 { return None } else { self.remaining -= 1; }
+        if self.remaining == 0 {
+            return None;
+        } else {
+            self.remaining -= 1;
+        }
         let adjust_idx = false;
         read_record(&mut self.rb, &mut self.idx, &mut self.id, adjust_idx);
         let cnt = self.rb.delta() as u64;
-        let rnk = (self.rb.delta() as f32) 
-            / self.wmap.norm_sc + self.wmap.min_sc;
+        let rnk = (self.rb.delta() as f32) / self.wmap.norm_sc + self.wmap.min_sc;
         let frq = self.rb.delta() as u64;
-        Some(WMapItem2 { wmap: self.wmap, 
-            id: self.id, idx: self.idx, cnt, frq, rnk })
+        Some(WMapItem2 {
+            wmap: self.wmap,
+            id: self.id,
+            idx: self.idx,
+            cnt,
+            frq,
+            rnk,
+        })
     }
 }
 
 impl WMapItem2<'_> {
     pub fn iter(&self) -> WMapIter3<'_> {
         WMapIter3 {
-            wmap: self.wmap, 
+            wmap: self.wmap,
             rb: bits::Reader::open(as_slice_ref(&self.wmap.levels[2]), self.idx),
             remaining: self.cnt as usize,
-            id: 0, idx: 0
+            id: 0,
+            idx: 0,
         }
     }
 }
 
-
 // Level 3
 
 #[derive(Debug)]
-pub struct WMapItem3<'a> { wmap: &'a WMap,
-    pub id: u32, pub idx: usize, pub cnt: u64, pub frq: u64, pub rnk: f32,
-    pub lcm: Vec<i32>,    
+pub struct WMapItem3<'a> {
+    wmap: &'a WMap,
+    pub id: u32,
+    pub idx: usize,
+    pub cnt: u64,
+    pub frq: u64,
+    pub rnk: f32,
+    pub lcm: Vec<i32>,
 }
 impl fmt::Display for WMapItem3<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(3 id:{} seek:{} cnt:{} frq:{} rnk:{} lcm:{})",
-               self.id, self.idx, self.cnt, self.frq, self.rnk,
-               self.lcm.iter().fold(
-                   String::new(),
-                   |mut s, &n| { write!(s, "{}", n).ok(); s}
-               )
+        write!(
+            f,
+            "(3 id:{} seek:{} cnt:{} frq:{} rnk:{} lcm:{})",
+            self.id,
+            self.idx,
+            self.cnt,
+            self.frq,
+            self.rnk,
+            self.lcm.iter().fold(String::new(), |mut s, &n| {
+                write!(s, "{}", n).ok();
+                s
+            })
         )
     }
 }
 pub struct WMapIter3<'a> {
     wmap: &'a WMap,
     rb: bits::Reader<'a>,
-    id: u32, idx: usize,
+    id: u32,
+    idx: usize,
     remaining: usize,
 }
 
-impl <'a> Iterator for WMapIter3<'a> {
+impl<'a> Iterator for WMapIter3<'a> {
     type Item = WMapItem3<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 { return None } else { self.remaining -= 1; }
+        if self.remaining == 0 {
+            return None;
+        } else {
+            self.remaining -= 1;
+        }
         let adjust_idx = self.wmap.adjust_idx;
         read_record(&mut self.rb, &mut self.idx, &mut self.id, adjust_idx);
         let cnt = self.rb.delta() as u64;
-        let rnk = (self.rb.delta() as f32) 
-            / self.wmap.norm_sc + self.wmap.min_sc;
+        let rnk = (self.rb.delta() as f32) / self.wmap.norm_sc + self.wmap.min_sc;
         let frq = self.rb.delta() as u64;
         let mut lcm = Vec::<i32>::new();
         if self.wmap.has_commonest {
             let len = self.rb.gamma();
-            for _ in 0..len-1 {
-                let cm = self.rb.delta() -1;
+            for _ in 0..len - 1 {
+                let cm = self.rb.delta() - 1;
                 lcm.push(cm as i32)
             }
         } else {
@@ -275,12 +340,19 @@ impl <'a> Iterator for WMapIter3<'a> {
         }
         if self.wmap.has_ftt {
             let len = self.rb.gamma();
-            for _ in 0..len-1 {
-                let _ftt = self.rb.delta() -1;
+            for _ in 0..len - 1 {
+                let _ftt = self.rb.delta() - 1;
             }
         }
-        Some(WMapItem3 { wmap: self.wmap,
-            id: self.id, idx: self.idx, cnt, frq, rnk, lcm })
+        Some(WMapItem3 {
+            wmap: self.wmap,
+            id: self.id,
+            idx: self.idx,
+            cnt,
+            frq,
+            rnk,
+            lcm,
+        })
     }
 }
 
@@ -302,12 +374,18 @@ pub struct WMapRev {
 
 impl WMapRev {
     fn new(revm: memmap::Mmap) -> WMapRev {
-        let mut rb = bits::Reader::open(as_slice_ref(&revm), 16*8);
-        let mut alignmult = rb.delta();                
+        let mut rb = bits::Reader::open(as_slice_ref(&revm), 16 * 8);
+        let mut alignmult = rb.delta();
         let _corpsize = rb.delta();
         let adjust_pos = alignmult == 2;
-        if adjust_pos { alignmult = 1; }
-        WMapRev { revm, alignmult: alignmult as usize, adjust_pos }
+        if adjust_pos {
+            alignmult = 1;
+        }
+        WMapRev {
+            revm,
+            alignmult: alignmult as usize,
+            adjust_pos,
+        }
     }
     fn poss(&self, from: usize, cnt: usize) -> WMapRevStream<'_> {
         let bitpos = 8 * from * self.alignmult;
@@ -323,24 +401,30 @@ impl WMapRev {
 pub struct WMapRevStream<'a> {
     rb: bits::Reader<'a>,
     remaining: usize,
-    adjust_pos: bool, 
+    adjust_pos: bool,
     curpos: i64,
 }
 
 impl Iterator for WMapRevStream<'_> {
     type Item = (usize, Option<i32>);
     fn next(&mut self) -> Option<(usize, Option<i32>)> {
-        if self.remaining == 0 { return None; }
+        if self.remaining == 0 {
+            return None;
+        }
         self.remaining -= 1;
 
         self.curpos += self.rb.delta() as i64;
-        if self.adjust_pos { self.curpos -= 1; }
- 
+        if self.adjust_pos {
+            self.curpos -= 1;
+        }
+
         let mut c = self.rb.gamma() as i64;
         let coll = if c == 1 {
             None
         } else {
-            if c % 2 == 1 { c = -c; }
+            if c % 2 == 1 {
+                c = -c;
+            }
             assert!(self.rb.gamma() == 1);
             Some((c / 2) as i32)
         };
@@ -349,7 +433,9 @@ impl Iterator for WMapRevStream<'_> {
 }
 
 impl ExactSizeIterator for WMapRevStream<'_> {
-    fn len(&self) -> usize { self.remaining }
+    fn len(&self) -> usize {
+        self.remaining
+    }
 }
 
 pub struct WSLex<'a> {
@@ -359,18 +445,28 @@ pub struct WSLex<'a> {
 }
 
 impl<'a> WSLex<'a> {
-    pub fn open(wsbase: &str, wsattr: Box<dyn Attr + 'a>)
-            -> Result<WSLex<'a>, Box<dyn std::error::Error>> {
+    pub fn open(
+        wsbase: &str,
+        wsattr: Box<dyn Attr + 'a>,
+    ) -> Result<WSLex<'a>, Box<dyn std::error::Error>> {
         let grlex = MapLex::open(wsbase)?;
         let ml = MapLex::open(&(wsbase.to_string() + ".coll"));
-        let colllex = match ml {  // distinguish between error and nonexistence
+        let colllex = match ml {
+            // distinguish between error and nonexistence
             Ok(a) => Some(a),
-            Err(e@std::io::Error {..}) => {
-                if e.kind() == std::io::ErrorKind::InvalidInput { None }
-                else { return Err(Box::new(e)); }
-            },
+            Err(e @ std::io::Error { .. }) => {
+                if e.kind() == std::io::ErrorKind::InvalidInput {
+                    None
+                } else {
+                    return Err(Box::new(e));
+                }
+            }
         };
-        Ok(WSLex { grlex, colllex, wsattr })
+        Ok(WSLex {
+            grlex,
+            colllex,
+            wsattr,
+        })
     }
 
     pub fn coll2id(&self, coll: &str) -> u32 {
@@ -383,15 +479,26 @@ impl<'a> WSLex<'a> {
 
     pub fn id2coll(&self, id: u32) -> &str {
         if id > self.wsattr.id_range() {
-            self.colllex.as_ref().unwrap().id2str(id - self.wsattr.id_range())
+            self.colllex
+                .as_ref()
+                .unwrap()
+                .id2str(id - self.wsattr.id_range())
         } else {
             self.wsattr.id2str(id)
         }
     }
 
-    pub fn id2head(&self, id: u32) -> &str { self.wsattr.id2str(id) }
-    pub fn head2id(&self, head: &str) -> Option<u32> { self.wsattr.str2id(head) }
+    pub fn id2head(&self, id: u32) -> &str {
+        self.wsattr.id2str(id)
+    }
+    pub fn head2id(&self, head: &str) -> Option<u32> {
+        self.wsattr.str2id(head)
+    }
 
-    pub fn id2rel(&self, id: u32) -> &str { self.grlex.id2str(id) }
-    pub fn rel2id(&self, head: &str) -> Option<u32> { self.grlex.str2id(head) }
+    pub fn id2rel(&self, id: u32) -> &str {
+        self.grlex.id2str(id)
+    }
+    pub fn rel2id(&self, head: &str) -> Option<u32> {
+        self.grlex.str2id(head)
+    }
 }

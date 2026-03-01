@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 
-use corp::corp::{rebase_path, Attr, Corpus};
+use corp::corp::{Attr, Corpus, rebase_path};
 use corp::corpconf::Block;
 use corp::writerev_sparse;
 
@@ -181,9 +181,7 @@ fn extract_host(url: &str) -> String {
         rest = r;
     }
 
-    let end = rest
-        .find(['/', '?', '#'])
-        .unwrap_or(rest.len());
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let mut host_port = &rest[..end];
 
     if host_port.starts_with('[') {
@@ -290,12 +288,7 @@ fn compute_pipe_values(
     }
 
     if values.len() != id_range as usize {
-        return Err(format!(
-            "error: expected {} values, got {}",
-            id_range,
-            values.len()
-        )
-        .into());
+        return Err(format!("error: expected {} values, got {}", id_range, values.len()).into());
     }
 
     Ok(values)
@@ -304,7 +297,12 @@ fn compute_pipe_values(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
-        usage(&args.first().cloned().unwrap_or_else(|| "mkdynattr".to_string()));
+        usage(
+            &args
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "mkdynattr".to_string()),
+        );
         return Err("invalid arguments".into());
     }
 

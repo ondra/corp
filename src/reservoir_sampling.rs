@@ -1,10 +1,10 @@
+use crate::corp::{Attr, Frequency};
 use rand::Rng;
 use rand::prelude::SmallRng;
 use rand_distr::Beta;
 use rand_distr::Binomial;
 use rand_distr::Distribution;
 use rand_distr::Uniform;
-use crate::corp::{Attr, Frequency};
 
 pub struct ReservoirSampler<'a, E> {
     rng: &'a mut SmallRng,
@@ -84,7 +84,12 @@ where
     I: Iterator,
 {
     pub fn from_count(it: I, count: usize, k: usize, rng: &'_ mut R) -> Sampler<'_, I, R> {
-        Sampler { it, n: count as isize, k, rng }
+        Sampler {
+            it,
+            n: count as isize,
+            k,
+            rng,
+        }
     }
 }
 
@@ -195,7 +200,7 @@ impl<'a> Id2PossSampler<'a> {
         &'b self,
         id: u32,
         rng: &'b mut R,
-    ) -> Box<dyn Iterator<Item=u64> + Send + Sync + 'b> {
+    ) -> Box<dyn Iterator<Item = u64> + Send + Sync + 'b> {
         match (self.nsamples, &self.frq) {
             (Some(nsamples), Some(frq)) => {
                 let cnt = frq.frq(id) as usize;
@@ -205,15 +210,14 @@ impl<'a> Id2PossSampler<'a> {
                 } else {
                     self.attr.revidx().id2poss(id)
                 }
-            },
+            }
             (Some(nsamples), None) => {
                 let poss = self.attr.revidx().id2poss(id);
                 let mut sampled = sample_online(poss, nsamples, rng);
                 sampled.sort_unstable();
                 Box::new(sampled.into_iter())
-            },
-            (None, _) => self.attr.revidx().id2poss(id)
+            }
+            (None, _) => self.attr.revidx().id2poss(id),
         }
     }
 }
-

@@ -1,25 +1,36 @@
 #[derive(Debug)]
 pub struct Reader<'a> {
     bitpos: usize,
-    mem: &'a[u64]
+    mem: &'a [u64],
 }
 
-impl <'a> Reader<'_> {
-    pub fn open(mem: &'a[u64], offset_bits: usize) -> Reader<'a> {
-        Reader { mem, bitpos: offset_bits }
+impl<'a> Reader<'_> {
+    pub fn open(mem: &'a [u64], offset_bits: usize) -> Reader<'a> {
+        Reader {
+            mem,
+            bitpos: offset_bits,
+        }
     }
 
-    pub fn skip_bits(&mut self, n: usize) { self.bitpos += n; }
-    pub fn tell(&self) -> i64 { self.bitpos as i64 }
+    pub fn skip_bits(&mut self, n: usize) {
+        self.bitpos += n;
+    }
+    pub fn tell(&self) -> i64 {
+        self.bitpos as i64
+    }
     fn atom(&self) -> u64 {
-        let p1 = self.mem[self.bitpos/64];
-        let p2 = if self.bitpos/64+1 < self.mem.len() {
-            self.mem[self.bitpos/64+1] 
+        let p1 = self.mem[self.bitpos / 64];
+        let p2 = if self.bitpos / 64 + 1 < self.mem.len() {
+            self.mem[self.bitpos / 64 + 1]
         } else {
             0
         };
-        (p1 >> (self.bitpos%64))
-            | if self.bitpos%64 == 0 { 0 } else { p2 << (64 - self.bitpos%64) }
+        (p1 >> (self.bitpos % 64))
+            | if self.bitpos % 64 == 0 {
+                0
+            } else {
+                p2 << (64 - self.bitpos % 64)
+            }
     }
 
     pub fn delta(&mut self) -> u64 {
