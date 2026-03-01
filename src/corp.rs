@@ -2,6 +2,7 @@ use fs_err::File;
 use std::io::Read;
 use std::fmt;
 
+use crate::corpconf;
 use crate::lex;
 use crate::text;
 use crate::rev;

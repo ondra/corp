@@ -1,4 +1,5 @@
 pub mod corp;
+pub mod corpconf;
 pub mod lex;
 pub mod structure;
 pub mod rev;

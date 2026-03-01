@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use chrono::Utc;
 
-use corpconf::Block;
+use corp::corpconf::Block;
 use corp::corp::rebase_path;
 use corp::wrbits::BitsWriter;
 
@@ -510,7 +510,7 @@ fn read_conf(path: &Path) -> Result<Block, Box<dyn std::error::Error>> {
     let mut file = File::open(path)?;
     let mut buf = String::new();
     file.read_to_string(&mut buf)?;
-    Ok(corpconf::parse_conf_opt(&buf)?)
+    Ok(corp::corpconf::parse_conf_opt(&buf)?)
 }
 
 fn align_writer(

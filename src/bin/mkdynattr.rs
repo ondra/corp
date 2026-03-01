@@ -7,8 +7,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 
 use corp::corp::{rebase_path, Attr, Corpus};
+use corp::corpconf::Block;
 use corp::writerev_sparse;
-use corpconf::Block;
 
 fn usage(prog: &str) {
     eprintln!("usage: {prog} corpus dynattr");
