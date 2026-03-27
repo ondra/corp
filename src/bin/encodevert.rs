@@ -527,7 +527,7 @@ fn print_usage() {
     println!("encodevert (minimal)");
     println!();
     println!("Usage:");
-    println!("  encodevert <config> [input]");
+    println!("  encodevert [-c] <config> [input]");
     println!();
     println!("If input is omitted, VERTICAL from config is used, then stdin.");
     println!("If VERTICAL starts with '|', it is executed and stdout is used as input.");
@@ -581,6 +581,7 @@ fn attr_text_type(conf: &Block, name: &str) -> TextType {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = env::args().skip(1).collect();
+    args.retain(|a| a != "-c");
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print_usage();
         return Ok(());
