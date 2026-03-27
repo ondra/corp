@@ -1,12 +1,15 @@
+use std::ffi::OsString;
+
 use corp::corp::{Attr, CorpusLike};
 use corp::structure::Struct;
 use corp::subcorp::with_corpuslike_spec;
+use pico_args::Arguments;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
 const VERSION: &str = git_version::git_version!(args = ["--tags", "--always", "--dirty"]);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct Args {
     corpus: Option<String>,
     word: Option<String>,
@@ -43,66 +46,69 @@ fn parse_usize(value: &str, flag: &str, prog: &str) -> Result<usize, String> {
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut it = std::env::args();
-    let prog = it.next().unwrap_or_else(|| "conc".to_string());
+    parse_args_from(std::env::args_os())
+}
 
-    let mut attr = None;
-    let mut query_attr = None;
-    let mut sample = None;
-    let mut limit = None;
-    let mut window = 25usize;
-    let mut tab = false;
-    let mut glue = None;
-    let mut version = false;
-    let mut pos = Vec::<String>::new();
+fn parse_args_from<I, S>(args: I) -> Result<Args, String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let prog = args
+        .first()
+        .and_then(|arg| arg.to_str())
+        .unwrap_or("conc")
+        .to_string();
+    let mut pargs = Arguments::from_vec(args.into_iter().skip(1).collect());
 
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "-h" | "--help" => return Err(usage(&prog)),
-            "-v" => version = true,
-            "-t" => tab = true,
-            "-a" => {
-                attr = Some(
-                    it.next()
-                        .ok_or_else(|| format!("missing value for -a\n{}", usage(&prog)))?,
-                );
-            }
-            "-q" => {
-                query_attr = Some(
-                    it.next()
-                        .ok_or_else(|| format!("missing value for -q\n{}", usage(&prog)))?,
-                );
-            }
-            "-n" => {
-                let raw = it
-                    .next()
-                    .ok_or_else(|| format!("missing value for -n\n{}", usage(&prog)))?;
-                sample = Some(parse_usize(&raw, "-n", &prog)?);
-            }
-            "-l" => {
-                let raw = it
-                    .next()
-                    .ok_or_else(|| format!("missing value for -l\n{}", usage(&prog)))?;
-                limit = Some(parse_usize(&raw, "-l", &prog)?);
-            }
-            "-w" => {
-                let raw = it
-                    .next()
-                    .ok_or_else(|| format!("missing value for -w\n{}", usage(&prog)))?;
-                window = parse_usize(&raw, "-w", &prog)?;
-            }
-            "-g" => {
-                glue = Some(
-                    it.next()
-                        .ok_or_else(|| format!("missing value for -g\n{}", usage(&prog)))?,
-                );
-            }
-            _ if arg.starts_with('-') => {
-                return Err(format!("unknown option {arg}\n{}", usage(&prog)));
-            }
-            _ => pos.push(arg),
-        }
+    if pargs.contains(["-h", "--help"]) {
+        return Err(usage(&prog));
     }
+
+    let version = pargs.contains("-v");
+    let tab = pargs.contains("-t");
+    let attr = pargs
+        .opt_value_from_str::<_, String>("-a")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?;
+    let query_attr = pargs
+        .opt_value_from_str::<_, String>("-q")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?;
+    let sample = pargs
+        .opt_value_from_str::<_, String>("-n")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?
+        .map(|raw| parse_usize(&raw, "-n", &prog))
+        .transpose()?;
+    let limit = pargs
+        .opt_value_from_str::<_, String>("-l")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?
+        .map(|raw| parse_usize(&raw, "-l", &prog))
+        .transpose()?;
+    let window = pargs
+        .opt_value_from_str::<_, String>("-w")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?
+        .map(|raw| parse_usize(&raw, "-w", &prog))
+        .transpose()?
+        .unwrap_or(25);
+    let glue = pargs
+        .opt_value_from_str::<_, String>("-g")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?;
+
+    let pos = pargs.finish();
+    if let Some(arg) = pos
+        .iter()
+        .find(|arg| arg.to_string_lossy().starts_with('-'))
+    {
+        return Err(format!(
+            "unknown option {}\n{}",
+            arg.to_string_lossy(),
+            usage(&prog)
+        ));
+    }
+    let mut pos = pos
+        .into_iter()
+        .map(|arg| arg.into_string().map_err(|_| usage(&prog)))
+        .collect::<Result<Vec<_>, _>>()?;
 
     if !version && pos.len() < 2 {
         return Err(usage(&prog));
@@ -271,4 +277,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "invalid command-line arguments"
     })?;
     run(args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_vec(args: &[&str]) -> Result<Args, String> {
+        parse_args_from(args.iter().map(|s| (*s).to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn parse_attached_short_values() {
+        let args = parse_vec(&[
+            "conc", "-aword", "-qlemma", "-l10", "-w5", "-gdoc", "corp", "the",
+        ])
+        .expect("must parse");
+        assert_eq!(
+            args,
+            Args {
+                corpus: Some("corp".to_string()),
+                word: Some("the".to_string()),
+                attr: Some("word".to_string()),
+                query_attr: Some("lemma".to_string()),
+                sample: None,
+                limit: Some(10),
+                window: 5,
+                tab: false,
+                glue: Some("doc".to_string()),
+                version: false,
+            }
+        );
+    }
 }

@@ -1,6 +1,8 @@
 use std::cmp::{max, min};
 use std::io::{self, Write};
 
+use pico_args::Arguments;
+
 #[derive(Clone, Debug)]
 struct Config {
     seed: u64,
@@ -74,7 +76,7 @@ fn print_usage(mut w: impl Write) -> io::Result<()> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = parse_args(std::env::args().skip(1))?;
+    let cfg = parse_args()?;
     validate(&cfg)?;
 
     let mut rng = SplitMix64::new(cfg.seed);
@@ -140,38 +142,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn parse_args(
-    mut args: impl Iterator<Item = String>,
-) -> Result<Config, Box<dyn std::error::Error>> {
+fn parse_args() -> Result<Config, Box<dyn std::error::Error>> {
     let mut cfg = Config::default();
-    while let Some(a) = args.next() {
-        match a.as_str() {
-            "-h" | "--help" => {
-                print_usage(io::stdout())?;
-                std::process::exit(0);
-            }
-            "--seed" => cfg.seed = parse_next_u64("--seed", &mut args)?,
-            "--docs" => cfg.docs = parse_next_usize("--docs", &mut args)?,
-            "--max-lines" => cfg.max_lines = Some(parse_next_usize("--max-lines", &mut args)?),
-            "--vocab" => cfg.vocab = parse_next_usize("--vocab", &mut args)?,
-            "--zipf" => cfg.zipf_s = parse_next_f64("--zipf", &mut args)?,
-            "--word-len" => cfg.word_len = parse_next_usize("--word-len", &mut args)?,
-            "--lemma-group" => cfg.lemma_group = parse_next_usize("--lemma-group", &mut args)?,
-            "--min-sent" => cfg.min_sent_len = parse_next_usize("--min-sent", &mut args)?,
-            "--max-sent" => cfg.max_sent_len = parse_next_usize("--max-sent", &mut args)?,
-            "--min-doc-words" => {
-                cfg.min_doc_words = parse_next_usize("--min-doc-words", &mut args)?
-            }
-            "--max-doc-words" => {
-                cfg.max_doc_words = parse_next_usize("--max-doc-words", &mut args)?
-            }
-            "--cap-prob" => cfg.cap_prob = parse_next_f64("--cap-prob", &mut args)?,
-            "--pos-tags" => {
-                let v = parse_next_string("--pos-tags", &mut args)?;
-                cfg.pos_tags = v.chars().collect();
-            }
-            _ => return Err(format!("unknown arg: {}", a).into()),
-        }
+    let mut pargs = Arguments::from_env();
+    if pargs.contains(["-h", "--help"]) {
+        print_usage(io::stdout())?;
+        std::process::exit(0);
+    }
+    if let Some(seed) = pargs.opt_value_from_str("--seed")? {
+        cfg.seed = seed;
+    }
+    if let Some(docs) = pargs.opt_value_from_str("--docs")? {
+        cfg.docs = docs;
+    }
+    if let Some(max_lines) = pargs.opt_value_from_str("--max-lines")? {
+        cfg.max_lines = Some(max_lines);
+    }
+    if let Some(vocab) = pargs.opt_value_from_str("--vocab")? {
+        cfg.vocab = vocab;
+    }
+    if let Some(zipf_s) = pargs.opt_value_from_str("--zipf")? {
+        cfg.zipf_s = zipf_s;
+    }
+    if let Some(word_len) = pargs.opt_value_from_str("--word-len")? {
+        cfg.word_len = word_len;
+    }
+    if let Some(lemma_group) = pargs.opt_value_from_str("--lemma-group")? {
+        cfg.lemma_group = lemma_group;
+    }
+    if let Some(min_sent_len) = pargs.opt_value_from_str("--min-sent")? {
+        cfg.min_sent_len = min_sent_len;
+    }
+    if let Some(max_sent_len) = pargs.opt_value_from_str("--max-sent")? {
+        cfg.max_sent_len = max_sent_len;
+    }
+    if let Some(min_doc_words) = pargs.opt_value_from_str("--min-doc-words")? {
+        cfg.min_doc_words = min_doc_words;
+    }
+    if let Some(max_doc_words) = pargs.opt_value_from_str("--max-doc-words")? {
+        cfg.max_doc_words = max_doc_words;
+    }
+    if let Some(cap_prob) = pargs.opt_value_from_str("--cap-prob")? {
+        cfg.cap_prob = cap_prob;
+    }
+    if let Some(pos_tags) = pargs.opt_value_from_str::<_, String>("--pos-tags")? {
+        cfg.pos_tags = pos_tags.chars().collect();
+    }
+    if let Some(arg) = pargs.finish().into_iter().next() {
+        return Err(format!("unknown arg: {}", arg.to_string_lossy()).into());
     }
     Ok(cfg)
 }
@@ -217,38 +235,6 @@ fn can_emit_more_tokens(cfg: &Config, tokens_emitted: usize, needed_more: usize)
         None => true,
         Some(max_lines) => tokens_emitted.saturating_add(needed_more) <= max_lines,
     }
-}
-
-fn parse_next_string(
-    flag: &str,
-    args: &mut impl Iterator<Item = String>,
-) -> Result<String, Box<dyn std::error::Error>> {
-    args.next()
-        .ok_or_else(|| format!("{} requires a value", flag).into())
-}
-
-fn parse_next_usize(
-    flag: &str,
-    args: &mut impl Iterator<Item = String>,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let v = parse_next_string(flag, args)?;
-    Ok(v.parse()?)
-}
-
-fn parse_next_u64(
-    flag: &str,
-    args: &mut impl Iterator<Item = String>,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    let v = parse_next_string(flag, args)?;
-    Ok(v.parse()?)
-}
-
-fn parse_next_f64(
-    flag: &str,
-    args: &mut impl Iterator<Item = String>,
-) -> Result<f64, Box<dyn std::error::Error>> {
-    let v = parse_next_string(flag, args)?;
-    Ok(v.parse()?)
 }
 
 fn strip_last_char(s: &str) -> String {

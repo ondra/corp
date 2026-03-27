@@ -1,4 +1,7 @@
+use std::ffi::OsString;
+
 use corp::corp::Corpus;
+use pico_args::Arguments;
 
 const VERSION: &str = git_version::git_version!(args = ["--tags", "--always", "--dirty"]);
 
@@ -22,31 +25,52 @@ fn usage(prog: &str) -> String {
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut it = std::env::args();
-    let prog = it.next().unwrap_or_else(|| "corpinfo".to_string());
+    parse_args_from(std::env::args_os())
+}
 
-    let mut show_path = false;
-    let mut show_size = false;
-    let mut show_version = false;
-    let mut corpus = None;
+fn parse_args_from<I, S>(args: I) -> Result<Args, String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let prog = args
+        .first()
+        .and_then(|arg| arg.to_str())
+        .unwrap_or("corpinfo")
+        .to_string();
+    let mut pargs = Arguments::from_vec(args.into_iter().skip(1).collect());
 
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "-h" | "--help" => return Err(usage(&prog)),
-            "-p" => show_path = true,
-            "-s" => show_size = true,
-            "-v" => show_version = true,
-            _ if arg.starts_with('-') => {
-                return Err(format!("unknown option {arg}\n{}", usage(&prog)));
-            }
-            _ => {
-                if corpus.is_some() {
-                    return Err(format!("unexpected argument: {arg}\n{}", usage(&prog)));
-                }
-                corpus = Some(arg);
-            }
-        }
+    if pargs.contains(["-h", "--help"]) {
+        return Err(usage(&prog));
     }
+
+    let show_path = pargs.contains("-p");
+    let show_size = pargs.contains("-s");
+    let show_version = pargs.contains("-v");
+    let pos = pargs.finish();
+    if let Some(arg) = pos
+        .iter()
+        .find(|arg| arg.to_string_lossy().starts_with('-'))
+    {
+        return Err(format!(
+            "unknown option {}\n{}",
+            arg.to_string_lossy(),
+            usage(&prog)
+        ));
+    }
+    if pos.len() > 1 {
+        return Err(format!(
+            "unexpected argument: {}\n{}",
+            pos[1].to_string_lossy(),
+            usage(&prog)
+        ));
+    }
+    let corpus = pos
+        .into_iter()
+        .next()
+        .map(|arg| arg.into_string().map_err(|_| usage(&prog)))
+        .transpose()?;
 
     if !show_version && corpus.is_none() {
         return Err(usage(&prog));

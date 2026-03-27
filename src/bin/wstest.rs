@@ -1,9 +1,14 @@
 use corp::corp::Corpus;
 use corp::wsketch::WMap;
 use corp::wsketch::WSLex;
+use pico_args::Arguments;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let corpname = std::env::args().nth(1).unwrap();
+    let mut args = Arguments::from_env().finish().into_iter().map(|arg| {
+        arg.into_string()
+            .unwrap_or_else(|value| value.to_string_lossy().into_owned())
+    });
+    let corpname = args.next().unwrap();
     let corp = Corpus::open(&corpname)?;
 
     let wsattrname = corp.get_conf("WSATTR").unwrap();
@@ -16,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wsattr = corp.open_attribute(&wsattrname)?;
     // let r = ws.find_id(1); println!("a {:?}", r);
 
-    if let Some(head_str) = std::env::args().nth(2) {
+    if let Some(head_str) = args.next() {
         let head_id = wsattr
             .str2id(&head_str)
             .ok_or("head not found in lexicon")?;

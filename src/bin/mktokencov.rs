@@ -1,6 +1,10 @@
+use std::ffi::OsString;
+
 use corp::corp::{Corpus, CorpusLike};
 use corp::subcorp::{SubCorpus, resolve_subc_path, struct_index_at_or_after_pos};
+use pico_args::Arguments;
 
+#[derive(Debug, PartialEq, Eq)]
 struct Args {
     corpname: String,
     structname: Option<String>,
@@ -17,36 +21,47 @@ fn usage(prog: &str) -> String {
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut iter = std::env::args();
-    let prog = iter.next().unwrap_or_else(|| "mktokencov".to_string());
+    parse_args_from(std::env::args_os())
+}
 
-    let mut output_base = None;
-    let mut subcorpus = None;
-    let mut positionals = Vec::<String>::new();
+fn parse_args_from<I, S>(args: I) -> Result<Args, String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let prog = args
+        .first()
+        .and_then(|arg| arg.to_str())
+        .unwrap_or("mktokencov")
+        .to_string();
+    let mut pargs = Arguments::from_vec(args.into_iter().skip(1).collect());
 
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "-h" | "--help" => {
-                return Err(usage(&prog));
-            }
-            "-o" | "--output-base" => {
-                output_base = Some(
-                    iter.next()
-                        .ok_or_else(|| format!("missing value for {}\n{}", arg, usage(&prog)))?,
-                );
-            }
-            "-s" | "--subcorpus" => {
-                subcorpus = Some(
-                    iter.next()
-                        .ok_or_else(|| format!("missing value for {}\n{}", arg, usage(&prog)))?,
-                );
-            }
-            _ if arg.starts_with('-') => {
-                return Err(format!("unknown option {}\n{}", arg, usage(&prog)));
-            }
-            _ => positionals.push(arg),
-        }
+    if pargs.contains(["-h", "--help"]) {
+        return Err(usage(&prog));
     }
+
+    let output_base = pargs
+        .opt_value_from_str::<_, String>(["-o", "--output-base"])
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?;
+    let subcorpus = pargs
+        .opt_value_from_str::<_, String>(["-s", "--subcorpus"])
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?;
+    let positionals = pargs.finish();
+    if let Some(arg) = positionals
+        .iter()
+        .find(|arg| arg.to_string_lossy().starts_with('-'))
+    {
+        return Err(format!(
+            "unknown option {}\n{}",
+            arg.to_string_lossy(),
+            usage(&prog)
+        ));
+    }
+    let positionals = positionals
+        .into_iter()
+        .map(|arg| arg.into_string().map_err(|_| usage(&prog)))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let args = match positionals.len() {
         1 => Args {
@@ -230,4 +245,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "invalid command-line arguments"
     })?;
     run(args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_vec(args: &[&str]) -> Result<Args, String> {
+        parse_args_from(args.iter().map(|s| (*s).to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn parse_attached_short_values() {
+        let args = parse_vec(&["mktokencov", "-obase", "-ssub/1.subc", "corp", "doc", "id"])
+            .expect("must parse");
+        assert_eq!(
+            args,
+            Args {
+                corpname: "corp".to_string(),
+                structname: Some("doc".to_string()),
+                attrname: Some("id".to_string()),
+                output_base: Some("base".to_string()),
+                subcorpus: Some("sub/1.subc".to_string()),
+            }
+        );
+    }
 }

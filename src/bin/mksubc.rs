@@ -1,14 +1,16 @@
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use corp::corp::Corpus;
+use pico_args::Arguments;
 use regex::Regex;
 
 use corp::query;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct Args {
     corpus: String,
     subcorp_dir: String,
@@ -17,7 +19,7 @@ struct Args {
     mode: Mode,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum Mode {
     FromDefFile {
         def_file: String,
@@ -55,47 +57,50 @@ fn usage(prog: &str) -> String {
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut it = std::env::args();
-    let prog = it.next().unwrap_or_else(|| "mksubc".to_string());
+    parse_args_from(std::env::args_os())
+}
 
-    let mut stats = None;
-    let mut freqlistattrs = None;
-    let mut name = None;
-    let mut pos = Vec::<String>::new();
+fn parse_args_from<I, S>(args: I) -> Result<Args, String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let prog = args
+        .first()
+        .and_then(|arg| arg.to_str())
+        .unwrap_or("mksubc")
+        .to_string();
+    let mut pargs = Arguments::from_vec(args.into_iter().skip(1).collect());
 
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "-h" | "--help" => return Err(usage(&prog)),
-            "-s" => {
-                stats = Some(
-                    it.next()
-                        .ok_or_else(|| format!("missing value for -s\n{}", usage(&prog)))?,
-                );
-            }
-            "-f" => {
-                freqlistattrs = Some(
-                    it.next()
-                        .ok_or_else(|| format!("missing value for -f\n{}", usage(&prog)))?,
-                );
-            }
-            "-n" => {
-                if name.is_some() {
-                    return Err(format!(
-                        "option -n specified multiple times\n{}",
-                        usage(&prog)
-                    ));
-                }
-                name = Some(
-                    it.next()
-                        .ok_or_else(|| format!("missing value for -n\n{}", usage(&prog)))?,
-                );
-            }
-            _ if arg.starts_with('-') => {
-                return Err(format!("unknown option {arg}\n{}", usage(&prog)));
-            }
-            _ => pos.push(arg),
-        }
+    if pargs.contains(["-h", "--help"]) {
+        return Err(usage(&prog));
     }
+
+    let stats = pargs
+        .opt_value_from_str::<_, String>("-s")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?;
+    let freqlistattrs = pargs
+        .opt_value_from_str::<_, String>("-f")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?;
+    let name = pargs
+        .opt_value_from_str::<_, String>("-n")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?;
+    let pos = pargs.finish();
+    if let Some(arg) = pos
+        .iter()
+        .find(|arg| arg.to_string_lossy().starts_with('-'))
+    {
+        return Err(format!(
+            "unknown option {}\n{}",
+            arg.to_string_lossy(),
+            usage(&prog)
+        ));
+    }
+    let pos = pos
+        .into_iter()
+        .map(|arg| arg.into_string().map_err(|_| usage(&prog)))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let (corpus, subcorp_dir, mode) = if let Some(name) = name {
         if pos.len() != 4 {
@@ -391,6 +396,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
 
+    fn parse_vec(args: &[&str]) -> Result<Args, String> {
+        parse_args_from(args.iter().map(|s| (*s).to_string()).collect::<Vec<_>>())
+    }
+
     #[test]
     fn parse_def_content_records_and_comments() {
         let txt = r#"
@@ -417,5 +426,34 @@ mod tests {
     fn merge_ranges_overlaps_and_adjacency() {
         let merged = merge_ranges(vec![(10, 20), (20, 30), (5, 8), (7, 9), (100, 100)]);
         assert_eq!(merged, vec![(5, 9), (10, 30)]);
+    }
+
+    #[test]
+    fn parse_attached_short_values() {
+        let args = parse_vec(&[
+            "mksubc",
+            "-sstats.txt",
+            "-fword",
+            "-nsub1",
+            "corp",
+            "out",
+            "doc",
+            "id=\"x\"",
+        ])
+        .expect("must parse");
+        assert_eq!(
+            args,
+            Args {
+                corpus: "corp".to_string(),
+                subcorp_dir: "out".to_string(),
+                stats: Some("stats.txt".to_string()),
+                freqlistattrs: Some("word".to_string()),
+                mode: Mode::Direct {
+                    name: "sub1".to_string(),
+                    structure: "doc".to_string(),
+                    spec: "id=\"x\"".to_string(),
+                },
+            }
+        );
     }
 }

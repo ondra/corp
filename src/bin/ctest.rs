@@ -2,6 +2,7 @@
 #![allow(warnings)]
 
 use corp::corp;
+use pico_args::Arguments;
 //use corp;
 /*
 mod lex;
@@ -13,7 +14,13 @@ mod structure;
 */
 
 fn main() {
-    let corpname = std::env::args().nth(1).expect("specify corpname");
+    let corpname = Arguments::from_env()
+        .finish()
+        .into_iter()
+        .next()
+        .expect("specify corpname")
+        .into_string()
+        .unwrap_or_else(|value| value.to_string_lossy().into_owned());
     eprintln!("{}", corpname);
 
     let corp = corp::Corpus::open(&corpname).expect("corpus open failed");

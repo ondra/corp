@@ -1,7 +1,9 @@
+use std::ffi::OsString;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use fs_err::File;
+use pico_args::Arguments;
 
 use corp::corp::{Corpus, CorpusLike, open_freq};
 use corp::subcorp::{SubCorpus, resolve_subc_path};
@@ -30,29 +32,41 @@ fn split_corpus_spec(spec: &str) -> (String, Option<String>) {
 }
 
 fn parse_args() -> Result<Args, String> {
-    parse_args_from(std::env::args())
+    parse_args_from(std::env::args_os())
 }
 
 fn parse_args_from<I>(args: I) -> Result<Args, String>
 where
-    I: IntoIterator<Item = String>,
+    I: IntoIterator,
+    I::Item: Into<OsString>,
 {
-    let mut it = args.into_iter();
-    let prog = it.next().unwrap_or_else(|| "mkstats".to_string());
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let prog = args
+        .first()
+        .and_then(|arg| arg.to_str())
+        .unwrap_or("mkstats")
+        .to_string();
+    let mut pargs = Arguments::from_vec(args.into_iter().skip(1).collect());
 
-    let mut force = false;
-    let mut positional = Vec::<String>::new();
-
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "-h" | "--help" => return Err(usage(&prog)),
-            "-f" => force = true,
-            _ if arg.starts_with('-') => {
-                return Err(format!("unknown option {arg}\n{}", usage(&prog)));
-            }
-            _ => positional.push(arg),
-        }
+    if pargs.contains(["-h", "--help"]) {
+        return Err(usage(&prog));
     }
+    let force = pargs.contains("-f");
+    let positional = pargs.finish();
+    if let Some(arg) = positional
+        .iter()
+        .find(|arg| arg.to_string_lossy().starts_with('-'))
+    {
+        return Err(format!(
+            "unknown option {}\n{}",
+            arg.to_string_lossy(),
+            usage(&prog)
+        ));
+    }
+    let positional = positional
+        .into_iter()
+        .map(|arg| arg.into_string().map_err(|_| usage(&prog)))
+        .collect::<Result<Vec<_>, _>>()?;
 
     if positional.len() != 3 && positional.len() != 4 {
         return Err(usage(&prog));

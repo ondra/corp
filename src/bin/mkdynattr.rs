@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -9,6 +8,7 @@ use std::thread;
 use corp::corp::{Attr, Corpus, rebase_path};
 use corp::corpconf::Block;
 use corp::writerev_sparse;
+use pico_args::Arguments;
 
 fn usage(prog: &str) {
     eprintln!("usage: {prog} corpus dynattr");
@@ -295,19 +295,21 @@ fn compute_pipe_values(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 3 {
-        usage(
-            &args
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "mkdynattr".to_string()),
-        );
+    let args: Vec<String> = Arguments::from_env()
+        .finish()
+        .into_iter()
+        .map(|arg| {
+            arg.into_string()
+                .unwrap_or_else(|value| value.to_string_lossy().into_owned())
+        })
+        .collect();
+    if args.len() < 2 {
+        usage("mkdynattr");
         return Err("invalid arguments".into());
     }
 
-    let corpus_name = &args[1];
-    let attr_name = &args[2];
+    let corpus_name = &args[0];
+    let attr_name = &args[1];
 
     let corpus = Corpus::open(corpus_name)?;
     let attr_conf = parse_attr_block(&corpus.conf, attr_name)?;

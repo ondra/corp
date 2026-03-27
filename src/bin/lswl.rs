@@ -1,10 +1,12 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::ffi::OsString;
 
 use corp::corp::CorpusLike;
 use corp::subcorp::with_corpuslike_spec;
+use pico_args::Arguments;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct Args {
     corpus: String,
     attr: String,
@@ -38,57 +40,83 @@ fn parse_u64(value: &str, flag: &str, prog: &str) -> Result<u64, String> {
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut it = std::env::args();
-    let prog = it.next().unwrap_or_else(|| "lswl".to_string());
+    parse_args_from(std::env::args_os())
+}
 
-    let mut limit = 100usize;
-    let mut minfreq = 5u64;
-    let mut maxfreq = 0u64;
-    let mut sorttype = "frq".to_string();
-    let mut pos = Vec::<String>::new();
+fn parse_args_from<I, S>(args: I) -> Result<Args, String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let prog = args
+        .first()
+        .and_then(|arg| arg.to_str())
+        .unwrap_or("lswl")
+        .to_string();
+    let mut pargs = Arguments::from_vec(args.into_iter().skip(1).collect());
 
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "-h" | "--help" => return Err(usage(&prog)),
-            "-l" => {
-                let raw = it
-                    .next()
-                    .ok_or_else(|| format!("missing value for -l\n{}", usage(&prog)))?;
-                let parsed = parse_u64(&raw, "-l", &prog)?;
-                limit = usize::try_from(parsed)
-                    .map_err(|_| format!("value for -l too large: {raw}\n{}", usage(&prog)))?;
-            }
-            "-i" => {
-                let raw = it
-                    .next()
-                    .ok_or_else(|| format!("missing value for -i\n{}", usage(&prog)))?;
-                minfreq = parse_u64(&raw, "-i", &prog)?.max(1);
-            }
-            "-a" => {
-                let raw = it
-                    .next()
-                    .ok_or_else(|| format!("missing value for -a\n{}", usage(&prog)))?;
-                maxfreq = parse_u64(&raw, "-a", &prog)?;
-            }
-            "-s" => {
-                sorttype = it
-                    .next()
-                    .ok_or_else(|| format!("missing value for -s\n{}", usage(&prog)))?;
-            }
-            _ if arg.starts_with('-') => {
-                return Err(format!("unknown option {arg}\n{}", usage(&prog)));
-            }
-            _ => pos.push(arg),
-        }
+    if pargs.contains(["-h", "--help"]) {
+        return Err(usage(&prog));
     }
 
+    let limit = pargs
+        .opt_value_from_str::<_, String>("-l")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?
+        .map(|raw| {
+            let parsed = parse_u64(&raw, "-l", &prog)?;
+            usize::try_from(parsed)
+                .map_err(|_| format!("value for -l too large: {raw}\n{}", usage(&prog)))
+        })
+        .transpose()?
+        .unwrap_or(100);
+    let minfreq = pargs
+        .opt_value_from_str::<_, String>("-i")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?
+        .map(|raw| parse_u64(&raw, "-i", &prog).map(|value| value.max(1)))
+        .transpose()?
+        .unwrap_or(5);
+    let maxfreq = pargs
+        .opt_value_from_str::<_, String>("-a")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?
+        .map(|raw| parse_u64(&raw, "-a", &prog))
+        .transpose()?
+        .unwrap_or(0);
+    let sorttype = pargs
+        .opt_value_from_str::<_, String>("-s")
+        .map_err(|e| format!("{e}\n{}", usage(&prog)))?
+        .unwrap_or_else(|| "frq".to_string());
+
+    let pos = pargs.finish();
+    if let Some(arg) = pos
+        .iter()
+        .find(|arg| arg.to_string_lossy().starts_with('-'))
+    {
+        return Err(format!(
+            "unknown option {}\n{}",
+            arg.to_string_lossy(),
+            usage(&prog)
+        ));
+    }
     if pos.len() != 2 {
         return Err(usage(&prog));
     }
 
+    let mut pos = pos.into_iter();
+    let corpus = pos
+        .next()
+        .expect("validated length")
+        .into_string()
+        .map_err(|_| usage(&prog))?;
+    let attr = pos
+        .next()
+        .expect("validated length")
+        .into_string()
+        .map_err(|_| usage(&prog))?;
+
     Ok(Args {
-        corpus: pos.remove(0),
-        attr: pos.remove(0),
+        corpus,
+        attr,
         limit,
         minfreq,
         maxfreq,
@@ -161,4 +189,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "invalid command-line arguments"
     })?;
     run(args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_vec(args: &[&str]) -> Result<Args, String> {
+        parse_args_from(args.iter().map(|s| (*s).to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn parse_attached_short_values() {
+        let args = parse_vec(&["lswl", "-l100", "-i1", "-a500", "-sdocf", "corp", "word"])
+            .expect("must parse");
+        assert_eq!(
+            args,
+            Args {
+                corpus: "corp".to_string(),
+                attr: "word".to_string(),
+                limit: 100,
+                minfreq: 1,
+                maxfreq: 500,
+                sorttype: "docf".to_string(),
+            }
+        );
+    }
 }

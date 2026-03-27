@@ -1,6 +1,6 @@
 use chrono::Utc;
 use std::collections::HashMap;
-use std::env;
+use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -9,6 +9,7 @@ use std::process::{Child, Command, Stdio};
 use corp::corp::rebase_path;
 use corp::corpconf::Block;
 use corp::wrbits::BitsWriter;
+use pico_args::Arguments;
 
 const TEXT_MAGIC: [u8; 6] = [0xa3, b'f', b'i', b'n', b'D', b'T'];
 const INT_MAGIC: [u8; 6] = [0xa3, b'f', b'i', b'n', b'I', b'T'];
@@ -18,6 +19,16 @@ const DATA_ALIGN: u64 = 32;
 const STATUS_EVERY_LINES: u64 = 10_000_000;
 const ENC_ERR_MAX: i64 = 100;
 const WARN_VERBOSE: bool = false;
+
+#[derive(Debug, PartialEq, Eq)]
+enum CliAction {
+    Run {
+        conf_path: PathBuf,
+        input: Option<String>,
+    },
+    Help,
+    Version,
+}
 
 #[derive(Clone, Copy, Debug)]
 enum TextType {
@@ -579,26 +590,56 @@ fn attr_text_type(conf: &Block, name: &str) -> TextType {
     }
 }
 
+fn parse_cli_args_from<I, S>(args: I) -> Result<CliAction, pico_args::Error>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let mut pargs = Arguments::from_vec(args.into_iter().skip(1).collect());
+
+    if pargs.contains(["-h", "--help"]) {
+        return Ok(CliAction::Help);
+    }
+    if pargs.contains(["-V", "--version"]) {
+        return Ok(CliAction::Version);
+    }
+
+    let config_from_flag = pargs.opt_value_from_str::<_, String>("-c")?;
+    let rest = pargs.finish();
+    let mut rest = rest.into_iter().map(|arg| {
+        arg.into_string()
+            .unwrap_or_else(|value| value.to_string_lossy().into_owned())
+    });
+
+    let conf_path = if let Some(path) = config_from_flag {
+        PathBuf::from(path)
+    } else if let Some(path) = rest.next() {
+        PathBuf::from(path)
+    } else {
+        return Ok(CliAction::Help);
+    };
+    let input = rest.next();
+
+    Ok(CliAction::Run { conf_path, input })
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args: Vec<String> = env::args().skip(1).collect();
-    args.retain(|a| a != "-c");
-    if args.iter().any(|a| a == "-h" || a == "--help") {
-        print_usage();
-        return Ok(());
-    }
-    if args.iter().any(|a| a == "-V" || a == "--version") {
-        println!("encodevert (minimal) {}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
-    }
-    if args.is_empty() {
-        print_usage();
-        return Ok(());
-    }
-    let conf_path = PathBuf::from(args.remove(0));
+    let (conf_path, cli_input) = match parse_cli_args_from(std::env::args_os())? {
+        CliAction::Help => {
+            print_usage();
+            return Ok(());
+        }
+        CliAction::Version => {
+            println!("encodevert (minimal) {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        CliAction::Run { conf_path, input } => (conf_path, input),
+    };
 
     let conf = read_conf(&conf_path)?;
     let mut input_from_conf = false;
-    let mut input = if let Some(cli_input) = args.get(0).cloned() {
+    let mut input = if let Some(cli_input) = cli_input {
         cli_input
     } else if let Some(conf_input) = conf.value("VERTICAL") {
         input_from_conf = true;
@@ -874,6 +915,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_config_forms() {
+        let bare = parse_cli_args_from(["encodevert", "conf"]).expect("must parse");
+        let spaced = parse_cli_args_from(["encodevert", "-c", "conf"]).expect("must parse");
+        let attached = parse_cli_args_from(["encodevert", "-cconf"]).expect("must parse");
+
+        assert_eq!(
+            bare,
+            CliAction::Run {
+                conf_path: PathBuf::from("conf"),
+                input: None,
+            }
+        );
+        assert_eq!(spaced, bare);
+        assert_eq!(attached, bare);
+    }
 }
 
 fn flush_pending_empty(sb: &mut StructWriter) -> Result<(), Box<dyn std::error::Error>> {

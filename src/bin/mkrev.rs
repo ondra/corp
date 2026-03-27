@@ -1,4 +1,3 @@
-use std::env;
 use std::path::Path;
 
 use corp::corp::Corpus;
@@ -7,6 +6,7 @@ use corp::text::{self, Text};
 use corp::writerev_dense;
 use corp::writerev_sparse;
 use corp::writerev_temp;
+use pico_args::Arguments;
 
 const USE_DELTA_DENSE_REV: bool = true;
 const CHUNK_BYTES: usize = 1024 * 1024 * 1024;
@@ -194,7 +194,14 @@ fn merge_runs_pass(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args: Vec<String> = env::args().skip(1).collect();
+    let mut args: Vec<String> = Arguments::from_env()
+        .finish()
+        .into_iter()
+        .map(|arg| {
+            arg.into_string()
+                .unwrap_or_else(|value| value.to_string_lossy().into_owned())
+        })
+        .collect();
     if args.len() < 2 {
         eprintln!("Usage: mkrev <config> <attribute>");
         eprintln!("  config is a corpus configuration path or name");

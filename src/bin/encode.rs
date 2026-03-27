@@ -14,6 +14,8 @@ use std::io::Seek;
 use std::io::SeekFrom;
 use std::io::Write;
 
+use pico_args::Arguments;
+
 type Atom = usize;
 
 pub struct BinFile {
@@ -155,7 +157,13 @@ impl WriteBits {
 }
 
 fn main() {
-    let arg1 = std::env::args().nth(1).expect("arg1");
+    let arg1 = Arguments::from_env()
+        .finish()
+        .into_iter()
+        .next()
+        .expect("arg1")
+        .into_string()
+        .unwrap_or_else(|value| value.to_string_lossy().into_owned());
 
     let stdin = std::io::stdin();
     let mut r: Box<dyn BufRead> = if arg1 == "-" {
