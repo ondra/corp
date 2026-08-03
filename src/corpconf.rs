@@ -163,7 +163,7 @@ fn parse_str<'a, E: ParseError<&'a S>>(inp: &'a S) -> IResult<&'a S, &'a S, E> {
     alt((
         delimited(tag("\""), take_while(|c: char| c != '"'), tag("\"")),
         delimited(tag("'"), take_while(|c: char| c != '\''), tag("'")),
-        take_while1(|c: char| c != ' ' && c != '#' && c != '\t' && c != '\n'),
+        take_while1(|c: char| c != ' ' && c != '#' && c != '\t' && c != '\n' && c != '{'),
     ))(inp)
 }
 
